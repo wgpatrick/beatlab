@@ -34,7 +34,7 @@ jobs:
         with:
           repository: wgpatrick/wgpatrick.github.io
           path: main-site
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.DEPLOY_TOKEN }}
 
       - name: Deploy to main site
         run: |
