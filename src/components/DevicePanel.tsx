@@ -1,7 +1,8 @@
-import { DRUM_LABELS, DRUM_LANES, type OscType, type Track } from '../types'
+import { DRUM_LABELS, DRUM_LANES, type OscType, type SynthParams, type Track } from '../types'
 import { engine } from '../audio/engine'
 import { useStore } from '../state/store'
 import { Knob } from './Knob'
+import type { ParamStatus } from '../lessons/framework'
 
 const WAVES: { type: OscType; label: string; path: string }[] = [
   { type: 'sine', label: 'Sine', path: 'M1 8 Q 4.5 0, 8 8 T 15 8' },
@@ -15,6 +16,12 @@ const ms = (v: number) => (v >= 1 ? `${v.toFixed(1)}s` : `${Math.round(v * 1000)
 
 export function DevicePanel({ track }: { track: Track }) {
   const setSynth = useStore((s) => s.setSynth)
+  const lesson = useStore((s) => s.lesson())
+  const paramScores = useStore((s) => s.paramScores)
+
+  const visibleParams = lesson?.visibleParams
+  const visible = (key: keyof SynthParams) => !visibleParams || visibleParams.includes(key)
+  const statusOf = (key: keyof SynthParams): ParamStatus | undefined => paramScores?.[key]
 
   if (track.kind === 'drums') {
     return (
@@ -40,48 +47,71 @@ export function DevicePanel({ track }: { track: Track }) {
   const p = track.synth
   const set = (patch: Partial<typeof p>) => setSynth(track.id, patch)
 
+  const showFilter = visible('cutoff') || visible('resonance')
+  const showEnv = visible('attack') || visible('decay') || visible('sustain') || visible('release')
+
   return (
     <div className="device">
-      <div className="device-section">
-        <div className="device-section-title">OSC</div>
-        <div className="wave-btns">
-          {WAVES.map((w) => (
-            <button
-              key={w.type}
-              className={`wave ${p.osc === w.type ? 'on' : ''}`}
-              onClick={() => set({ osc: w.type })}
-              title={w.type}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16">
-                <path d={w.path} stroke="currentColor" strokeWidth="1.5" fill="none" />
-              </svg>
-              {w.label}
-            </button>
-          ))}
+      {visible('osc') && (
+        <div className="device-section">
+          <div className="device-section-title">OSC</div>
+          <div className="wave-btns">
+            {WAVES.map((w) => (
+              <button
+                key={w.type}
+                className={`wave ${p.osc === w.type ? 'on' : ''} ${p.osc === w.type && statusOf('osc') ? `status-${statusOf('osc')}` : ''}`}
+                onClick={() => set({ osc: w.type })}
+                title={w.type}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16">
+                  <path d={w.path} stroke="currentColor" strokeWidth="1.5" fill="none" />
+                </svg>
+                {w.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <div className="device-section">
-        <div className="device-section-title">FILTER</div>
-        <div className="knob-row">
-          <Knob label="Cutoff" value={p.cutoff} min={40} max={16000} log format={hz} onChange={(v) => set({ cutoff: v })} />
-          <Knob label="Res" value={p.resonance} min={0.1} max={20} format={(v) => v.toFixed(1)} onChange={(v) => set({ resonance: v })} />
+      )}
+      {showFilter && (
+        <div className="device-section">
+          <div className="device-section-title">FILTER</div>
+          <div className="knob-row">
+            {visible('cutoff') && (
+              <Knob label="Cutoff" value={p.cutoff} min={40} max={16000} log format={hz} status={statusOf('cutoff')} onChange={(v) => set({ cutoff: v })} />
+            )}
+            {visible('resonance') && (
+              <Knob label="Res" value={p.resonance} min={0.1} max={20} format={(v) => v.toFixed(1)} status={statusOf('resonance')} onChange={(v) => set({ resonance: v })} />
+            )}
+          </div>
         </div>
-      </div>
-      <div className="device-section">
-        <div className="device-section-title">ENVELOPE</div>
-        <div className="knob-row">
-          <Knob label="Attack" value={p.attack} min={0.001} max={2} log format={ms} onChange={(v) => set({ attack: v })} />
-          <Knob label="Decay" value={p.decay} min={0.01} max={2} log format={ms} onChange={(v) => set({ decay: v })} />
-          <Knob label="Sustain" value={p.sustain} min={0} max={1} format={(v) => v.toFixed(2)} onChange={(v) => set({ sustain: v })} />
-          <Knob label="Release" value={p.release} min={0.01} max={4} log format={ms} onChange={(v) => set({ release: v })} />
+      )}
+      {showEnv && (
+        <div className="device-section">
+          <div className="device-section-title">ENVELOPE</div>
+          <div className="knob-row">
+            {visible('attack') && (
+              <Knob label="Attack" value={p.attack} min={0.001} max={2} log format={ms} status={statusOf('attack')} onChange={(v) => set({ attack: v })} />
+            )}
+            {visible('decay') && (
+              <Knob label="Decay" value={p.decay} min={0.01} max={2} log format={ms} status={statusOf('decay')} onChange={(v) => set({ decay: v })} />
+            )}
+            {visible('sustain') && (
+              <Knob label="Sustain" value={p.sustain} min={0} max={1} format={(v) => v.toFixed(2)} status={statusOf('sustain')} onChange={(v) => set({ sustain: v })} />
+            )}
+            {visible('release') && (
+              <Knob label="Release" value={p.release} min={0.01} max={4} log format={ms} status={statusOf('release')} onChange={(v) => set({ release: v })} />
+            )}
+          </div>
         </div>
-      </div>
-      <div className="device-section">
-        <div className="device-section-title">OUT</div>
-        <div className="knob-row">
-          <Knob label="Volume" value={p.volume} min={-30} max={0} format={(v) => `${v.toFixed(0)}dB`} onChange={(v) => set({ volume: v })} />
+      )}
+      {visible('volume') && (
+        <div className="device-section">
+          <div className="device-section-title">OUT</div>
+          <div className="knob-row">
+            <Knob label="Volume" value={p.volume} min={-30} max={0} format={(v) => `${v.toFixed(0)}dB`} status={statusOf('volume')} onChange={(v) => set({ volume: v })} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

@@ -11,6 +11,60 @@ import {
   type Track,
 } from '../types'
 
+// ---------- per-parameter ear-training scoring ----------
+// Syntorial's actual mechanic: not audio comparison, a per-parameter value diff,
+// tri-state (correct/close/wrong) with tolerance tuned to perceptibility rather
+// than raw numeric distance (e.g. cutoff compared in octaves, not linear Hz).
+
+export type ParamStatus = 'correct' | 'close' | 'wrong'
+export type ScoreMap = Partial<Record<keyof SynthParams, ParamStatus>>
+
+interface Tolerance {
+  tight: number
+  loose: number
+  log?: boolean // compare in log2 space (octaves) instead of linear units
+}
+
+const PARAM_TOLERANCE: Record<Exclude<keyof SynthParams, 'osc'>, Tolerance> = {
+  cutoff: { tight: 0.2, loose: 0.6, log: true },
+  resonance: { tight: 1.5, loose: 4 },
+  attack: { tight: 0.25, loose: 0.7, log: true },
+  decay: { tight: 0.25, loose: 0.7, log: true },
+  sustain: { tight: 0.08, loose: 0.2 },
+  release: { tight: 0.3, loose: 0.8, log: true },
+  volume: { tight: 3, loose: 8 },
+}
+
+function scoreOne(key: keyof SynthParams, got: unknown, want: unknown): ParamStatus {
+  if (key === 'osc') return got === want ? 'correct' : 'wrong'
+  const tol = PARAM_TOLERANCE[key as Exclude<keyof SynthParams, 'osc'>]
+  if (!tol) return got === want ? 'correct' : 'wrong'
+  const g = got as number
+  const w = want as number
+  if (tol.log) {
+    const diff = Math.abs(Math.log2(Math.max(g, 0.001) / Math.max(w, 0.001)))
+    return diff <= tol.tight ? 'correct' : diff <= tol.loose ? 'close' : 'wrong'
+  }
+  const diff = Math.abs(g - w)
+  return diff <= tol.tight ? 'correct' : diff <= tol.loose ? 'close' : 'wrong'
+}
+
+export function scorePatch(got: SynthParams, want: SynthParams, keys?: (keyof SynthParams)[]): ScoreMap {
+  const use = keys ?? (Object.keys(want) as (keyof SynthParams)[])
+  const out: ScoreMap = {}
+  for (const k of use) out[k] = scoreOne(k, got[k], want[k])
+  return out
+}
+
+export function scoreSummary(scores: ScoreMap) {
+  const vals = Object.values(scores) as ParamStatus[]
+  const correct = vals.filter((v) => v === 'correct').length
+  const wrong = vals.filter((v) => v === 'wrong').length
+  const total = vals.length
+  const stars = total ? (Math.round((correct / total) * 3) as 0 | 1 | 2 | 3) : 0
+  return { correct, wrong, total, stars, allGood: wrong === 0 }
+}
+
 // ---------- note & track builders ----------
 
 let noteId = 0
@@ -185,6 +239,12 @@ export interface DrumHit {
   step: number
 }
 
+export interface ValidateResult {
+  pass: boolean
+  message: string
+  paramScores?: ScoreMap
+}
+
 export interface Lesson {
   id: string
   module: string
@@ -197,8 +257,12 @@ export interface Lesson {
   target?: Dyn<TargetPatch>
   drumTarget?: Dyn<DrumHit[]>
   drill?: boolean
+  /** Which SynthParams the device panel should expose for this lesson. Undefined = show everything
+   * (the default for lessons outside the Synthesis/Ear Training curriculum). Progressive reveal: each
+   * synthesis lesson lists everything taught up to and including itself. */
+  visibleParams?: (keyof SynthParams)[]
   setup: () => LessonSetup
-  validate: (ctx: ValidateCtx) => { pass: boolean; message: string }
+  validate: (ctx: ValidateCtx) => ValidateResult
 }
 
 export interface Module {
@@ -206,8 +270,8 @@ export interface Module {
   lessons: Lesson[]
 }
 
-export const pass = (message: string) => ({ pass: true, message })
-export const fail = (message: string) => ({ pass: false, message })
+export const pass = (message: string, paramScores?: ScoreMap): ValidateResult => ({ pass: true, message, paramScores })
+export const fail = (message: string, paramScores?: ScoreMap): ValidateResult => ({ pass: false, message, paramScores })
 
 export const track = (ctx: ValidateCtx, id: string) => ctx.tracks.find((t) => t.id === id)!
 export const laneSteps = (t: Track, lane: DrumLane) =>

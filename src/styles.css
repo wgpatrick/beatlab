@@ -10,6 +10,7 @@
   --accent: #ffb02e;
   --green: #7bd88f;
   --red: #e06c75;
+  --close: #e5c07b;
 }
 
 * {
@@ -745,6 +746,25 @@ button.seq-label:hover {
   background: var(--accent);
   color: #221600;
 }
+.wave.status-correct {
+  background: var(--green);
+  color: #10281a;
+  box-shadow: 0 0 0 2px #10281a inset;
+}
+.wave.status-close {
+  background: var(--close);
+  color: #2a2205;
+}
+.wave.status-wrong {
+  background: var(--red);
+  color: #2a0f11;
+}
+
+.knob-correct .knob-label,
+.knob-close .knob-label,
+.knob-wrong .knob-label {
+  font-weight: 700;
+}
 
 .drum-pads {
   display: flex;
@@ -883,6 +903,11 @@ button.seq-label:hover {
 .feedback-head {
   font-weight: 700;
   margin-bottom: 4px;
+}
+.stars {
+  margin-left: 6px;
+  color: var(--accent);
+  letter-spacing: 1px;
 }
 
 .next-btn {

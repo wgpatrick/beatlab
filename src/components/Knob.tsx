@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react'
+import type { ParamStatus } from '../lessons/framework'
 
 interface KnobProps {
   label: string
@@ -8,6 +9,14 @@ interface KnobProps {
   log?: boolean
   onChange: (v: number) => void
   format?: (v: number) => string
+  /** Ear-training feedback: colors the knob's arc/value to show how close this parameter is to a target. */
+  status?: ParamStatus
+}
+
+const STATUS_COLOR: Record<ParamStatus, string> = {
+  correct: '#7bd88f',
+  close: '#e5c07b',
+  wrong: '#e06c75',
 }
 
 const START_DEG = 135 // bottom-left
@@ -35,7 +44,7 @@ function arcPath(cx: number, cy: number, r: number, fromDeg: number, toDeg: numb
   return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`
 }
 
-export function Knob({ label, value, min, max, log = false, onChange, format }: KnobProps) {
+export function Knob({ label, value, min, max, log = false, onChange, format, status }: KnobProps) {
   const drag = useRef<{ startY: number; startNorm: number } | null>(null)
 
   const norm = Math.min(1, Math.max(0, toNorm(value, min, max, log)))
@@ -66,9 +75,10 @@ export function Knob({ label, value, min, max, log = false, onChange, format }: 
 
   const angle = START_DEG + norm * SWEEP
   const [nx, ny] = polar(20, 20, 11, angle)
+  const statusColor = status ? STATUS_COLOR[status] : undefined
 
   return (
-    <div className="knob">
+    <div className={`knob ${status ? `knob-${status}` : ''}`}>
       <svg
         width="40"
         height="40"
@@ -79,12 +89,20 @@ export function Knob({ label, value, min, max, log = false, onChange, format }: 
       >
         <path d={arcPath(20, 20, 16, START_DEG, START_DEG + SWEEP)} stroke="#3a3a3a" strokeWidth="3" fill="none" strokeLinecap="round" />
         {norm > 0.001 && (
-          <path d={arcPath(20, 20, 16, START_DEG, angle)} stroke="var(--accent)" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path
+            d={arcPath(20, 20, 16, START_DEG, angle)}
+            stroke={statusColor ?? 'var(--accent)'}
+            strokeWidth="3"
+            fill="none"
+            strokeLinecap="round"
+          />
         )}
-        <circle cx="20" cy="20" r="12" fill="#2b2b2b" stroke="#1a1a1a" />
+        <circle cx="20" cy="20" r="12" fill="#2b2b2b" stroke={statusColor ?? '#1a1a1a'} strokeWidth={statusColor ? 1.5 : 1} />
         <line x1="20" y1="20" x2={nx} y2={ny} stroke="#dedede" strokeWidth="2" strokeLinecap="round" />
       </svg>
-      <div className="knob-value">{format ? format(value) : value.toFixed(2)}</div>
+      <div className="knob-value" style={statusColor ? { color: statusColor } : undefined}>
+        {format ? format(value) : value.toFixed(2)}
+      </div>
       <div className="knob-label">{label}</div>
     </div>
   )

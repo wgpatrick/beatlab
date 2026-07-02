@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { ArrangementState, DrumLane, Note, SectionType, SynthParams, Track } from '../types'
 import { engine } from '../audio/engine'
 import { findLesson, LESSONS, nextLessonId, sandboxTracks, type Lesson, type LessonParams } from '../lessons/curriculum'
+import type { ScoreMap } from '../lessons/framework'
 
 const COMPLETED_KEY = 'beatlab-completed'
 
@@ -37,6 +38,7 @@ export interface AppState {
   arrangement: ArrangementState
   lessonParams: LessonParams
   feedback: { pass: boolean; message: string } | null
+  paramScores: ScoreMap | null
   sandboxSnapshot: { tracks: Track[]; bpm: number; loopBars: number; selectedTrackId: string } | null
 
   lesson: () => Lesson | undefined
@@ -80,6 +82,7 @@ export const useStore = create<AppState>()((set, get) => ({
   arrangement: { ...emptyArrangement(), ...initialSetup.arrangement },
   lessonParams: initialSetup.params ?? {},
   feedback: null,
+  paramScores: null,
   sandboxSnapshot: null,
 
   lesson: () => (get().mode === 'lesson' ? findLesson(get().currentLessonId) : undefined),
@@ -195,6 +198,7 @@ export const useStore = create<AppState>()((set, get) => ({
       arrangement: { ...emptyArrangement(), ...s.arrangement },
       lessonParams: s.params ?? {},
       feedback: null,
+      paramScores: null,
       currentStep: -1,
       sandboxSnapshot: snapshot,
     })
@@ -219,6 +223,7 @@ export const useStore = create<AppState>()((set, get) => ({
       selectedTrackId: snap.selectedTrackId,
       arrangement: emptyArrangement(),
       feedback: null,
+      paramScores: null,
       currentStep: -1,
       noteLength: 2,
     })
@@ -235,7 +240,7 @@ export const useStore = create<AppState>()((set, get) => ({
       completed = [...completed, lesson.id]
       localStorage.setItem(COMPLETED_KEY, JSON.stringify(completed))
     }
-    set({ feedback: result, completed })
+    set({ feedback: result, paramScores: result.paramScores ?? null, completed })
   },
 
   nextLesson: () => {

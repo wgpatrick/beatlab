@@ -1,12 +1,19 @@
 import { findLesson, nextLessonId, resolveDyn } from '../lessons/curriculum'
+import { scoreSummary, type ScoreMap } from '../lessons/framework'
 import { engine } from '../audio/engine'
 import { useStore } from '../state/store'
+
+function starString(scores: ScoreMap) {
+  const { stars } = scoreSummary(scores)
+  return ' ' + '★'.repeat(stars) + '☆'.repeat(3 - stars)
+}
 
 export function LessonPanel() {
   const mode = useStore((s) => s.mode)
   const currentLessonId = useStore((s) => s.currentLessonId)
   const lessonParams = useStore((s) => s.lessonParams)
   const feedback = useStore((s) => s.feedback)
+  const paramScores = useStore((s) => s.paramScores)
   const completed = useStore((s) => s.completed)
   const bpm = useStore((s) => s.bpm)
   const check = useStore((s) => s.check)
@@ -84,7 +91,10 @@ export function LessonPanel() {
       </button>
       {feedback && (
         <div className={`feedback ${feedback.pass ? 'pass' : 'fail'}`}>
-          <div className="feedback-head">{feedback.pass ? '✓ Passed' : '✕ Not yet'}</div>
+          <div className="feedback-head">
+            {feedback.pass ? '✓ Passed' : '✕ Not yet'}
+            {paramScores && <span className="stars">{starString(paramScores)}</span>}
+          </div>
           {feedback.message}
         </div>
       )}

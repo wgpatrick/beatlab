@@ -7,14 +7,42 @@ import {
   pass,
   rand,
   riffOneBar,
+  scorePatch,
+  scoreSummary,
   synthTrack,
   track,
   type Lesson,
   type Module,
+  type ParamStatus,
+  type ScoreMap,
 } from './framework'
 
 const SYNTH = 'Synthesis'
 const EAR = 'Ear Training'
+
+// ---------- progressive parameter reveal ----------
+// Cumulative: each stage lists everything taught up to and including it. The device panel hides
+// any SynthParams key not in the current lesson's visibleParams.
+const P_OSC: (keyof SynthParams)[] = ['osc', 'volume']
+const P_FILTER: (keyof SynthParams)[] = [...P_OSC, 'cutoff']
+const P_RESONANCE: (keyof SynthParams)[] = [...P_FILTER, 'resonance']
+const P_FULL: (keyof SynthParams)[] = [...P_RESONANCE, 'attack', 'decay', 'sustain', 'release']
+
+function messageFor(scores: ScoreMap, hints: Partial<Record<keyof SynthParams, string>>, successMsg: string) {
+  const entries = Object.entries(scores) as [keyof SynthParams, NonNullable<ScoreMap[keyof SynthParams]>][]
+  const wrong = entries.filter(([, v]) => v === 'wrong')
+  const close = entries.filter(([, v]) => v === 'close')
+  if (wrong.length) {
+    return fail('Getting closer — ' + wrong.map(([k]) => hints[k] ?? k).join('; ') + '.', scores)
+  }
+  if (close.length) {
+    return pass(
+      successMsg + ` (${close.map(([k]) => hints[k] ?? k).join(', ')} — close enough, that's within earshot.)`,
+      scores,
+    )
+  }
+  return pass(successMsg, scores)
+}
 
 const ARP_PHRASE_NOTES = [n(57, 0, 2), n(60, 2, 2), n(64, 4, 2), n(69, 6, 2), n(64, 8, 2), n(60, 10, 2), n(64, 12, 2), n(72, 14, 2)]
 const ARP_PHRASE_SECONDS = [
@@ -52,6 +80,7 @@ const synthLessons: Lesson[] = [
       'Listen for brightness: sine < triangle < square < saw.',
     ],
     centerPitch: 46,
+    visibleParams: P_OSC,
     setup: () => ({
       tracks: [synthTrack('synth', 'Synth', '#98c379', { osc: 'sine', cutoff: 12000, sustain: 0.5, decay: 0.3 }, riffOneBar(45))],
       loopBars: 1,
@@ -77,6 +106,7 @@ const synthLessons: Lesson[] = [
       'Sweep it slowly from max to min while the loop plays — that sweep is the sound of house music builds.',
     ],
     centerPitch: 36,
+    visibleParams: P_FILTER,
     setup: () => ({
       tracks: [synthTrack('synth', 'Bass', '#56b6c2', { osc: 'sawtooth', cutoff: 14000, sustain: 0.6, decay: 0.3 }, riffOneBar(33))],
       loopBars: 1,
@@ -102,6 +132,7 @@ const synthLessons: Lesson[] = [
       'Sweep cutoff up and down with high resonance — instant acid line.',
     ],
     centerPitch: 38,
+    visibleParams: P_RESONANCE,
     setup: () => ({
       tracks: [
         synthTrack('synth', 'Acid', '#98c379', { osc: 'sawtooth', cutoff: 800, resonance: 1, sustain: 0.2, decay: 0.15, release: 0.1 }, [
@@ -133,6 +164,7 @@ const synthLessons: Lesson[] = [
       'Shorter decay = tighter, more percussive. Try ~150ms.',
     ],
     centerPitch: 62,
+    visibleParams: P_FULL,
     setup: () => ({
       tracks: [synthTrack('synth', 'Pluck', '#c678dd', { osc: 'sawtooth', cutoff: 6000, attack: 0.4, decay: 0.5, sustain: 0.8, release: 1.5 }, ARP_PHRASE_NOTES.map((x) => ({ ...x })))],
       loopBars: 1,
@@ -162,6 +194,7 @@ const synthLessons: Lesson[] = [
       'Try triangle or saw with the cutoff around 1–3 kHz for a warmer pad.',
     ],
     centerPitch: 58,
+    visibleParams: P_FULL,
     setup: () => ({
       tracks: [
         synthTrack('synth', 'Pad', '#f7c948', { osc: 'sawtooth', cutoff: 8000, attack: 0.005, decay: 0.2, sustain: 0.7, release: 0.2 }, [
@@ -196,6 +229,7 @@ const synthLessons: Lesson[] = [
       'On headphones you\'ll hear it; on a club system you\'d feel it in your chest.',
     ],
     centerPitch: 36,
+    visibleParams: P_FULL,
     setup: () => ({
       tracks: [
         drumTrack({ kick: [0, 4, 8, 12], hat: [2, 6, 10, 14] }),
@@ -230,6 +264,7 @@ const synthLessons: Lesson[] = [
       'Compare with the pad — same chords, opposite envelope, completely different instrument.',
     ],
     centerPitch: 60,
+    visibleParams: P_FULL,
     setup: () => ({
       tracks: [
         synthTrack('synth', 'Organ', '#98c379', { osc: 'sawtooth', cutoff: 5000, attack: 0.3, decay: 0.3, sustain: 0.5, release: 1.0 }, [
@@ -267,6 +302,7 @@ const synthLessons: Lesson[] = [
       'The cutoff around 2–4 kHz is where saw stops fizzing and starts singing.',
     ],
     centerPitch: 60,
+    visibleParams: P_FULL,
     setup: () => ({
       tracks: [
         synthTrack('synth', 'Strings', '#f7c948', { osc: 'square', cutoff: 12000, attack: 0.005, decay: 0.2, sustain: 0.3, release: 0.2 }, chordProgressionNotes(4)),
@@ -301,7 +337,8 @@ function matchLesson(opts: {
   phrase: { pitch: number; time: number; dur: number }[]
   userNotes: () => { id: string; pitch: number; start: number; duration: number }[]
   userStart: Partial<SynthParams>
-  check: (p: SynthParams) => string[]
+  paramKeys: (keyof SynthParams)[]
+  paramHints: Partial<Record<keyof SynthParams, string>>
   successMsg: string
   loopBars?: number
   bpm?: number
@@ -316,6 +353,7 @@ function matchLesson(opts: {
     hints: opts.hints,
     centerPitch: opts.centerPitch ?? 58,
     target: { params: opts.target, phrase: opts.phrase },
+    visibleParams: P_FULL,
     setup: () => ({
       tracks: [synthTrack('synth', 'Mystery', '#61afef', opts.userStart, opts.userNotes())],
       loopBars: opts.loopBars ?? 1,
@@ -323,9 +361,9 @@ function matchLesson(opts: {
       selectedTrackId: 'synth',
     }),
     validate: (ctx) => {
-      const issues = opts.check(track(ctx, 'synth').synth)
-      if (issues.length) return fail('Getting closer — ' + issues.join('; ') + '.')
-      return pass(opts.successMsg)
+      const got = track(ctx, 'synth').synth
+      const scores = scorePatch(got, opts.target, opts.paramKeys)
+      return messageFor(scores, opts.paramHints, opts.successMsg)
     },
   }
 }
@@ -349,15 +387,13 @@ const earLessons: Lesson[] = [
     ],
     userNotes: () => [n(57, 0, 3), n(60, 4, 3), n(64, 8, 3), n(69, 12, 4)],
     userStart: { osc: 'sawtooth', cutoff: 12000, attack: 0.2, decay: 0.5, sustain: 0.7, release: 0.5 },
-    check: (p) => {
-      const issues: string[] = []
-      if (p.osc !== 'square') issues.push('waveform: is it buzzy (saw) or hollow, like a woodwind?')
-      if (p.cutoff > 1800) issues.push('filter: your sound is brighter than the target — darken it')
-      else if (p.cutoff < 450) issues.push('filter: your sound is darker than the target — open it up')
-      if (p.attack > 0.03) issues.push('attack: the target hits instantly')
-      if (p.sustain > 0.15) issues.push('sustain: the target dies out even when held — pull sustain way down')
-      if (p.decay < 0.08 || p.decay > 0.35) issues.push('decay: the target rings for roughly a fifth of a second')
-      return issues
+    paramKeys: ['osc', 'cutoff', 'attack', 'decay', 'sustain'],
+    paramHints: {
+      osc: 'waveform: is it buzzy (saw) or hollow, like a woodwind?',
+      cutoff: 'filter: compare brightness against the target — darker or brighter?',
+      attack: 'attack: the target hits instantly',
+      sustain: 'sustain: the target dies out even when held — pull sustain way down',
+      decay: 'decay: the target rings for roughly a fifth of a second',
     },
     successMsg: 'You reverse-engineered a patch by ear. This is exactly how you\'ll learn sounds from records.',
     centerPitch: 62,
@@ -377,13 +413,12 @@ const earLessons: Lesson[] = [
     phrase: BASS_PHRASE_SECONDS,
     userNotes: () => [n(33, 0, 3), n(33, 4, 3), n(45, 8, 3), n(33, 12, 3)],
     userStart: { osc: 'square', cutoff: 8000, attack: 0.05, decay: 0.3, sustain: 0.2, release: 0.4, volume: -8 },
-    check: (p) => {
-      const issues: string[] = []
-      if (p.osc !== 'sawtooth') issues.push('waveform: the growl says sawtooth')
-      if (p.cutoff > 650) issues.push('filter: too bright — this bass is dark')
-      if (p.sustain < 0.3) issues.push('sustain: the target holds while played — raise sustain')
-      if (p.attack > 0.05) issues.push('attack: it speaks instantly')
-      return issues
+    paramKeys: ['osc', 'cutoff', 'sustain', 'attack'],
+    paramHints: {
+      osc: 'waveform: the growl says sawtooth',
+      cutoff: 'filter: too bright — this bass is dark',
+      sustain: 'sustain: the target holds while played — raise sustain',
+      attack: 'attack: it speaks instantly',
     },
     successMsg: 'Dark, growly, held — a classic filtered saw bass. Your ear found the cutoff region on its own.',
     centerPitch: 38,
@@ -408,13 +443,12 @@ const earLessons: Lesson[] = [
     ],
     userNotes: () => [n(33, 0, 2), n(33, 2, 2), n(45, 4, 2), n(33, 6, 2), n(36, 8, 2), n(43, 10, 2), n(33, 12, 2), n(45, 14, 2)],
     userStart: { osc: 'sawtooth', cutoff: 8000, resonance: 1, attack: 0.01, decay: 0.4, sustain: 0.6, release: 0.3 },
-    check: (p) => {
-      const issues: string[] = []
-      if (p.resonance < 8) issues.push('that squelch is RESONANCE — crank it')
-      if (p.cutoff < 250 || p.cutoff > 1200) issues.push('cutoff: the peak needs to sit in the low-mids to bite')
-      if (p.osc !== 'sawtooth') issues.push('waveform: 303s run on saws')
-      if (p.sustain > 0.3) issues.push('sustain: the target notes are short stabs')
-      return issues
+    paramKeys: ['resonance', 'cutoff', 'osc', 'sustain'],
+    paramHints: {
+      resonance: 'that squelch is RESONANCE — crank it',
+      cutoff: 'cutoff: the peak needs to sit in the low-mids to bite',
+      osc: 'waveform: 303s run on saws',
+      sustain: 'sustain: the target notes are short stabs',
     },
     successMsg: 'You identified resonance by ear — the acid signature. That knob-recognition is real producer hearing.',
     centerPitch: 38,
@@ -435,13 +469,12 @@ const earLessons: Lesson[] = [
     phrase: CHORD_PHRASE_SECONDS,
     userNotes: () => [n(57, 0, 16), n(60, 0, 16), n(64, 0, 16), n(53, 16, 16), n(57, 16, 16), n(60, 16, 16)],
     userStart: { osc: 'sawtooth', cutoff: 9000, attack: 0.005, decay: 0.2, sustain: 0.7, release: 0.1, volume: -12 },
-    check: (p) => {
-      const issues: string[] = []
-      if (p.osc !== 'triangle') issues.push('waveform: softer than a saw, rounder than a square…')
-      if (p.attack < 0.4) issues.push('attack: the target blooms in — slow it down')
-      if (p.release < 1.0) issues.push('release: the target lingers after the chord ends')
-      if (p.sustain < 0.5) issues.push('sustain: it holds strong while played')
-      return issues
+    paramKeys: ['osc', 'attack', 'release', 'sustain'],
+    paramHints: {
+      osc: 'waveform: softer than a saw, rounder than a square…',
+      attack: 'attack: the target blooms in — slow it down',
+      release: 'release: the target lingers after the chord ends',
+      sustain: 'sustain: it holds strong while played',
     },
     successMsg: 'Attack and release by ear — the envelope edges. You can now hear a synth\'s settings, not just its sound.',
     loopBars: 2,
@@ -461,6 +494,7 @@ const earLessons: Lesson[] = [
     ],
     drill: true,
     centerPitch: 62,
+    visibleParams: P_FULL,
     target: (p) => ({
       params: basePatch({ osc: p.osc as OscType, cutoff: 14000, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.2 }),
       phrase: ARP_PHRASE_SECONDS,
@@ -480,9 +514,10 @@ const earLessons: Lesson[] = [
     },
     validate: (ctx) => {
       const got = track(ctx, 'synth').synth.osc
+      const scores = { osc: got === ctx.params.osc ? ('correct' as const) : ('wrong' as const) }
       if (got !== ctx.params.osc)
-        return fail(`Not ${got.toUpperCase()} — listen again. A/B it: play your loop, then the target. Compare the brightness and hollowness.`)
-      return pass(`${(ctx.params.osc as string).toUpperCase()} — correct. Reroll and keep going until it's instant.`)
+        return fail(`Not ${got.toUpperCase()} — listen again. A/B it: play your loop, then the target. Compare the brightness and hollowness.`, scores)
+      return pass(`${(ctx.params.osc as string).toUpperCase()} — correct. Reroll and keep going until it's instant.`, scores)
     },
   },
   {
@@ -499,6 +534,7 @@ const earLessons: Lesson[] = [
     ],
     drill: true,
     centerPitch: 46,
+    visibleParams: P_FULL,
     target: (p) => ({
       params: basePatch({ osc: 'sawtooth', cutoff: p.cutoff as number, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.2, volume: -8 }),
       phrase: [
@@ -525,9 +561,130 @@ const earLessons: Lesson[] = [
       const got = track(ctx, 'synth').synth.cutoff
       const want = ctx.params.cutoff as number
       const ratio = got / want
-      if (ratio > 2) return fail('Your filter is more than an octave TOO BRIGHT compared to the target. Darken it and A/B again.')
-      if (ratio < 0.5) return fail('Your filter is more than an octave TOO DARK compared to the target. Open it up and A/B again.')
-      return pass(`Close enough — the target was ${want >= 1000 ? `${want / 1000} kHz` : `${want} Hz`}, you landed at ${Math.round(got)} Hz. Reroll and recalibrate.`)
+      const scores = { cutoff: (Math.abs(Math.log2(ratio)) <= 1 ? 'correct' : 'wrong') as ParamStatus }
+      if (ratio > 2) return fail('Your filter is more than an octave TOO BRIGHT compared to the target. Darken it and A/B again.', scores)
+      if (ratio < 0.5) return fail('Your filter is more than an octave TOO DARK compared to the target. Open it up and A/B again.', scores)
+      return pass(`Close enough — the target was ${want >= 1000 ? `${want / 1000} kHz` : `${want} Hz`}, you landed at ${Math.round(got)} Hz. Reroll and recalibrate.`, scores)
+    },
+  },
+  {
+    id: 'group-challenge-1',
+    module: EAR,
+    title: 'Group Challenge: Waveform + Filter + Sustain',
+    summary:
+      'The real test: identifying several parameters in the same mystery patch at once, the way a real record never isolates just one control for you. Three things are randomized together — waveform, cutoff region, and whether the note sustains or not.',
+    task: 'Press PLAY TARGET, then match all three: OSC, CUTOFF (within an octave), and SUSTAIN (does it hold or die out?).',
+    hints: [
+      'Work one parameter at a time even though three are hidden — waveform first (brightness/hollowness), then cutoff region, then whether it sustains.',
+      'A/B constantly: your loop, then the target.',
+      'This is exactly what "Match the Patch" was building toward — combining skills you trained in isolation.',
+    ],
+    drill: true,
+    centerPitch: 58,
+    visibleParams: P_FULL,
+    target: (p) => ({
+      params: basePatch({
+        osc: p.osc as OscType,
+        cutoff: p.cutoff as number,
+        sustain: p.sustain as number,
+        attack: 0.01,
+        decay: 0.2,
+        release: 0.3,
+      }),
+      phrase: ARP_PHRASE_SECONDS,
+    }),
+    setup: () => {
+      const osc = rand(['sine', 'triangle', 'sawtooth', 'square'] as const)
+      const cutoff = rand([300, 1200, 4000, 9000])
+      const sustain = rand([0, 0.7])
+      return {
+        tracks: [
+          synthTrack(
+            'synth',
+            'Mystery',
+            '#61afef',
+            { osc: 'sawtooth', cutoff: 9000, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.3 },
+            ARP_PHRASE_NOTES.map((x) => ({ ...x })),
+          ),
+        ],
+        loopBars: 1,
+        bpm: 116,
+        selectedTrackId: 'synth',
+        params: { osc, cutoff, sustain },
+      }
+    },
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const target = basePatch({
+        osc: ctx.params.osc as OscType,
+        cutoff: ctx.params.cutoff as number,
+        sustain: ctx.params.sustain as number,
+      })
+      const scores = scorePatch(p, target, ['osc', 'cutoff', 'sustain'])
+      return messageFor(
+        scores,
+        {
+          osc: 'waveform: check brightness/hollowness against the target',
+          cutoff: 'cutoff: your brightness region doesn\'t match — A/B again',
+          sustain: 'sustain: does the target hold or die out? yours doesn\'t match',
+        },
+        'All three at once — waveform, filter and sustain. That is combined ear training, the real skill.',
+      )
+    },
+  },
+  {
+    id: 'patch-randomizer',
+    module: EAR,
+    title: 'Randomizer: Full Patch',
+    summary:
+      'Every parameter you\'ve learned in Synthesis, randomized together into one mystery patch. Infinite variations — reroll as many times as you want. This is the closest thing here to a real record: a full patch built from every control you now know.',
+    task: 'Press PLAY TARGET and rebuild the whole patch: OSC, CUTOFF, RESONANCE, ATTACK, DECAY, SUSTAIN, RELEASE.',
+    hints: [
+      'Go in signal-chain order: waveform first, then filter, then envelope — same order you learned them.',
+      'Resonance is silent unless the cutoff is low enough to bite — if you don\'t hear it, that\'s useful information too.',
+      'Reroll with "New Exercise" for a fresh patch any time — there\'s no limit.',
+    ],
+    drill: true,
+    centerPitch: 58,
+    visibleParams: P_FULL,
+    target: (p) => ({ params: p.patch as SynthParams, phrase: ARP_PHRASE_SECONDS }),
+    setup: () => {
+      const patch = basePatch({
+        osc: rand(['sine', 'triangle', 'sawtooth', 'square'] as const),
+        cutoff: rand([200, 500, 1000, 2500, 6000, 12000]),
+        resonance: rand([0.8, 2, 6, 12]),
+        attack: rand([0.005, 0.05, 0.3, 0.7]),
+        decay: rand([0.08, 0.2, 0.5]),
+        sustain: rand([0, 0.2, 0.5, 0.8]),
+        release: rand([0.1, 0.3, 0.8, 1.5]),
+      })
+      return {
+        tracks: [
+          synthTrack('synth', 'Mystery', '#61afef', basePatch({}), ARP_PHRASE_NOTES.map((x) => ({ ...x }))),
+        ],
+        loopBars: 1,
+        bpm: 112,
+        selectedTrackId: 'synth',
+        params: { patch },
+      }
+    },
+    validate: (ctx) => {
+      const got = track(ctx, 'synth').synth
+      const target = ctx.params.patch as SynthParams
+      const scores = scorePatch(got, target, ['osc', 'cutoff', 'resonance', 'attack', 'decay', 'sustain', 'release'])
+      return messageFor(
+        scores,
+        {
+          osc: 'waveform doesn\'t match',
+          cutoff: 'filter cutoff region doesn\'t match',
+          resonance: 'resonance amount doesn\'t match',
+          attack: 'attack time doesn\'t match',
+          decay: 'decay time doesn\'t match',
+          sustain: 'sustain level doesn\'t match',
+          release: 'release time doesn\'t match',
+        },
+        'Full patch, matched by ear. Reroll for another — infinite reps, no new content needed.',
+      )
     },
   },
 ]
