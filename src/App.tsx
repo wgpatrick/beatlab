@@ -16,16 +16,23 @@ export default function App() {
 
   const selected = tracks.find((t) => t.id === selectedTrackId) ?? tracks[0]
 
-  // space bar = play/stop, like every DAW
+  // space bar = play/stop, ctrl/cmd+z = undo, ctrl/cmd+shift+z = redo — like every DAW
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
-      e.preventDefault()
       const s = useStore.getState()
-      if (s.isPlaying) s.stop()
-      else void s.play()
+      if (e.code === 'Space') {
+        e.preventDefault()
+        if (s.isPlaying) s.stop()
+        else void s.play()
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) s.redo()
+        else s.undo()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

@@ -74,30 +74,30 @@ class Engine {
     this.drums = { kick, snare, clap, hat, openhat }
   }
 
-  triggerDrum(lane: DrumLane, time?: number) {
+  triggerDrum(lane: DrumLane, time?: number, velocity = 1) {
     if (!this.drums) return
     switch (lane) {
       case 'kick':
-        this.drums.kick.triggerAttackRelease('C1', '8n', time)
+        this.drums.kick.triggerAttackRelease('C1', '8n', time, velocity)
         break
       case 'snare':
-        this.drums.snare.triggerAttackRelease('8n', time)
+        this.drums.snare.triggerAttackRelease('8n', time, velocity)
         break
       case 'clap':
-        this.drums.clap.triggerAttackRelease('8n', time)
+        this.drums.clap.triggerAttackRelease('8n', time, velocity)
         break
       case 'hat':
-        this.drums.hat.triggerAttackRelease(300, '32n', time)
+        this.drums.hat.triggerAttackRelease(300, '32n', time, velocity)
         break
       case 'openhat':
-        this.drums.openhat.triggerAttackRelease(300, '16n', time)
+        this.drums.openhat.triggerAttackRelease(300, '16n', time, velocity)
         break
     }
   }
 
-  async previewDrum(lane: DrumLane) {
+  async previewDrum(lane: DrumLane, velocity = 1) {
     await this.ensureStarted()
-    this.triggerDrum(lane)
+    this.triggerDrum(lane, undefined, velocity)
   }
 
   private ensureChain(track: Track): SynthChain {
@@ -185,6 +185,11 @@ class Engine {
     const step = Math.round(transport.getTicksAtTime(time) / ticksPerStep) % totalSteps
     const bar = Math.floor(step / 16)
 
+    const stepSeconds = Tone.Time('16n').toSeconds()
+    // swing: push odd-numbered 16ths later, toward the following even step. 50% = straight,
+    // ~66% ≈ triplet shuffle. Applied as a scheduling offset, not a pattern change.
+    const swingTime = step % 2 === 1 ? time + stepSeconds * (2 * (s.swing / 100) - 1) : time
+
     for (const tr of s.tracks) {
       if (tr.muted) continue
       if (s.arrangement.enabled && s.arrangement.mode === 'energy') {
@@ -193,16 +198,16 @@ class Engine {
       }
       if (tr.kind === 'drums') {
         for (const lane of DRUM_LANES) {
-          if (tr.pattern[lane][step % 16]) this.triggerDrum(lane, time)
+          const vel = tr.pattern[lane][step % 16]
+          if (vel) this.triggerDrum(lane, swingTime, vel)
         }
       } else {
         const chain = this.chains.get(tr.id)
         if (!chain) continue
-        const stepSeconds = Tone.Time('16n').toSeconds()
         for (const n of tr.notes) {
           if (n.start === step) {
             const dur = Math.max(n.duration * stepSeconds * 0.9, 0.05)
-            chain.synth.triggerAttackRelease(Tone.Frequency(n.pitch, 'midi').toFrequency(), dur, time)
+            chain.synth.triggerAttackRelease(Tone.Frequency(n.pitch, 'midi').toFrequency(), dur, swingTime, n.velocity)
           }
         }
       }

@@ -16,6 +16,7 @@ export interface Note {
   pitch: number // MIDI note number, C4 = 60
   start: number // in 16th-note steps from loop start
   duration: number // in 16th-note steps
+  velocity: number // 0..1, how hard the note is struck
 }
 
 export const DRUM_LANES = ['kick', 'snare', 'clap', 'hat', 'openhat'] as const
@@ -29,7 +30,8 @@ export const DRUM_LABELS: Record<DrumLane, string> = {
   openhat: 'Open Hat',
 }
 
-export type DrumPattern = Record<DrumLane, boolean[]>
+// 0 = off, otherwise the step's velocity (0..1] — a step sequencer "accent" cycle
+export type DrumPattern = Record<DrumLane, number[]>
 
 export interface Track {
   id: string

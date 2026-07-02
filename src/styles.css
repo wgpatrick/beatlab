@@ -89,6 +89,13 @@ button {
   background: var(--green);
   color: #10281a;
 }
+.tbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.tbtn:disabled:hover {
+  color: var(--dim);
+}
 
 .bpm-label {
   display: flex;
@@ -561,11 +568,31 @@ button.seq-label:hover {
   background: var(--accent);
   box-shadow: 0 0 6px rgba(255, 176, 46, 0.35);
 }
+.step.on.vel-soft {
+  background: #a8791f;
+  box-shadow: none;
+}
+.step.on.vel-med {
+  background: #d99a2b;
+  box-shadow: 0 0 4px rgba(255, 176, 46, 0.25);
+}
+.step.on.vel-hard {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(255, 176, 46, 0.5);
+}
 .step.playing {
   border-color: #fff;
 }
 .step.on.playing {
-  background: #ffd47e;
+  filter: brightness(1.2);
+}
+
+.clear-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.clear-btn:disabled:hover {
+  color: var(--dim);
 }
 
 /* ---------- arrangement ---------- */

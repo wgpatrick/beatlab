@@ -20,14 +20,25 @@ const LENGTHS = [
   { label: '1 bar', v: 16 },
 ]
 
+const VELOCITIES = [
+  { label: 'Soft', v: 0.5 },
+  { label: 'Med', v: 0.8 },
+  { label: 'Hard', v: 1 },
+]
+
 export function PianoRoll({ track }: { track: Track }) {
   const loopBars = useStore((s) => s.loopBars)
   const currentStep = useStore((s) => s.currentStep)
   const noteLength = useStore((s) => s.noteLength)
   const setNoteLength = useStore((s) => s.setNoteLength)
+  const noteVelocity = useStore((s) => s.noteVelocity)
+  const setNoteVelocity = useStore((s) => s.setNoteVelocity)
   const addNote = useStore((s) => s.addNote)
   const removeNote = useStore((s) => s.removeNote)
   const clearTrack = useStore((s) => s.clearTrack)
+  const clipboard = useStore((s) => s.clipboard)
+  const copyTrack = useStore((s) => s.copyTrack)
+  const pasteTrack = useStore((s) => s.pasteTrack)
   const mode = useStore((s) => s.mode)
   const currentLessonId = useStore((s) => s.currentLessonId)
 
@@ -78,8 +89,26 @@ export function PianoRoll({ track }: { track: Track }) {
             </button>
           ))}
         </div>
+        <span className="toolbar-label">Velocity</span>
+        <div className="seg">
+          {VELOCITIES.map((vel) => (
+            <button
+              key={vel.label}
+              className={Math.abs(noteVelocity - vel.v) < 0.05 ? 'on' : ''}
+              onClick={() => setNoteVelocity(vel.v)}
+            >
+              {vel.label}
+            </button>
+          ))}
+        </div>
         <span className="toolbar-tip">click: add note · click note: delete</span>
         <div className="spacer" />
+        <button className="clear-btn" onClick={() => copyTrack(track.id)}>
+          Copy
+        </button>
+        <button className="clear-btn" disabled={!clipboard} onClick={() => pasteTrack(track.id)}>
+          Paste
+        </button>
         <button className="clear-btn" onClick={() => clearTrack(track.id)}>
           Clear
         </button>
@@ -130,13 +159,14 @@ export function PianoRoll({ track }: { track: Track }) {
               <div
                 key={n.id}
                 className="note"
-                title={noteName(n.pitch)}
+                title={`${noteName(n.pitch)} · velocity ${n.velocity.toFixed(2)}`}
                 style={{
                   left: n.start * CELL,
                   top: (MAX_PITCH - n.pitch) * ROW,
                   width: n.duration * CELL - 2,
                   height: ROW - 2,
                   background: track.color,
+                  opacity: 0.4 + n.velocity * 0.6,
                 }}
                 onMouseDown={(e) => {
                   e.stopPropagation()

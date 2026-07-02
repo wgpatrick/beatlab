@@ -68,20 +68,21 @@ export function scoreSummary(scores: ScoreMap) {
 // ---------- note & track builders ----------
 
 let noteId = 0
-export const n = (pitch: number, start: number, duration: number): Note => ({
+export const n = (pitch: number, start: number, duration: number, velocity = 0.8): Note => ({
   id: `n${noteId++}`,
   pitch,
   start,
   duration,
+  velocity,
 })
 
 export const emptyPattern = (): DrumPattern =>
-  Object.fromEntries(DRUM_LANES.map((l) => [l, Array(16).fill(false)])) as DrumPattern
+  Object.fromEntries(DRUM_LANES.map((l) => [l, Array(16).fill(0)])) as DrumPattern
 
 export const patternOf = (steps: Partial<Record<DrumLane, number[]>>): DrumPattern => {
   const p = emptyPattern()
   for (const [lane, idxs] of Object.entries(steps)) {
-    for (const i of idxs ?? []) p[lane as DrumLane][i] = true
+    for (const i of idxs ?? []) p[lane as DrumLane][i] = 1
   }
   return p
 }

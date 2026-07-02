@@ -1,4 +1,4 @@
-import type { OscType, SynthParams } from '../types'
+import type { Note, OscType, SynthParams } from '../types'
 import {
   chordProgressionNotes,
   drumTrack,
@@ -335,7 +335,7 @@ function matchLesson(opts: {
   hints: string[]
   target: SynthParams
   phrase: { pitch: number; time: number; dur: number }[]
-  userNotes: () => { id: string; pitch: number; start: number; duration: number }[]
+  userNotes: () => Note[]
   userStart: Partial<SynthParams>
   paramKeys: (keyof SynthParams)[]
   paramHints: Partial<Record<keyof SynthParams, string>>
