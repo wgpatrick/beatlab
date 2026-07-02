@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(git clone *)",
+      "Bash(grep -n '^plugins=' ~/.zshrc)",
+      "Bash(sed -i '' 's/^plugins=\\(git\\)/plugins=\\(git z macos zsh-autosuggestions zsh-syntax-highlighting\\)/' ~/.zshrc && grep -n '^plugins=' ~/.zshrc)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'Initial BeatLab commit: 54-lesson electronic music production trainer *)"
+    ]
+  }
+}
