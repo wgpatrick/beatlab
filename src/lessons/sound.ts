@@ -62,6 +62,7 @@ const CHORD_PHRASE_SECONDS = [
 
 const basePatch = (over: Partial<SynthParams>): SynthParams => ({
   osc: 'sawtooth', cutoff: 9000, resonance: 0.8, attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3, volume: -10,
+  pan: 0, sendReverb: 0, sendDelay: 0,
   ...over,
 })
 

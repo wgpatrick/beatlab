@@ -104,11 +104,37 @@ export function DevicePanel({ track }: { track: Track }) {
           </div>
         </div>
       )}
-      {visible('volume') && (
+      {(visible('volume') || visible('pan')) && (
         <div className="device-section">
           <div className="device-section-title">OUT</div>
           <div className="knob-row">
-            <Knob label="Volume" value={p.volume} min={-30} max={0} format={(v) => `${v.toFixed(0)}dB`} status={statusOf('volume')} onChange={(v) => set({ volume: v })} />
+            {visible('volume') && (
+              <Knob label="Volume" value={p.volume} min={-30} max={0} format={(v) => `${v.toFixed(0)}dB`} status={statusOf('volume')} onChange={(v) => set({ volume: v })} />
+            )}
+            {visible('pan') && (
+              <Knob
+                label="Pan"
+                value={p.pan}
+                min={-1}
+                max={1}
+                format={(v) => (Math.abs(v) < 0.03 ? 'C' : v < 0 ? `${Math.round(-v * 100)}L` : `${Math.round(v * 100)}R`)}
+                status={statusOf('pan')}
+                onChange={(v) => set({ pan: v })}
+              />
+            )}
+          </div>
+        </div>
+      )}
+      {(visible('sendReverb') || visible('sendDelay')) && (
+        <div className="device-section">
+          <div className="device-section-title">SEND</div>
+          <div className="knob-row">
+            {visible('sendReverb') && (
+              <Knob label="Reverb" value={p.sendReverb} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} status={statusOf('sendReverb')} onChange={(v) => set({ sendReverb: v })} />
+            )}
+            {visible('sendDelay') && (
+              <Knob label="Delay" value={p.sendDelay} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} status={statusOf('sendDelay')} onChange={(v) => set({ sendDelay: v })} />
+            )}
           </div>
         </div>
       )}

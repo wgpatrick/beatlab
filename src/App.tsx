@@ -8,11 +8,14 @@ import { PianoRoll } from './components/PianoRoll'
 import { StepSequencer } from './components/StepSequencer'
 import { ArrangementView } from './components/ArrangementView'
 import { DevicePanel } from './components/DevicePanel'
+import { SceneLauncher } from './components/SceneLauncher'
+import { AutomationLane } from './components/AutomationLane'
 
 export default function App() {
   const tracks = useStore((s) => s.tracks)
   const selectedTrackId = useStore((s) => s.selectedTrackId)
   const arrangement = useStore((s) => s.arrangement)
+  const mode = useStore((s) => s.mode)
 
   const selected = tracks.find((t) => t.id === selectedTrackId) ?? tracks[0]
 
@@ -46,6 +49,7 @@ export default function App() {
       <LessonSidebar />
       <main className="main">
         <TrackStrip />
+        {mode === 'sandbox' && <SceneLauncher />}
         <div className="editor-area">
           {showArrangement && arrangement.mode === 'structure' ? (
             <ArrangementView />
@@ -58,7 +62,10 @@ export default function App() {
           ) : selected?.kind === 'drums' ? (
             <StepSequencer track={selected} />
           ) : selected ? (
-            <PianoRoll track={selected} />
+            <>
+              {mode === 'sandbox' && <AutomationLane track={selected} />}
+              <PianoRoll track={selected} />
+            </>
           ) : null}
         </div>
         <div className="device-bar">{selected && <DevicePanel track={selected} />}</div>

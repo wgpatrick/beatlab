@@ -11,6 +11,9 @@ export function StepSequencer({ track }: { track: Track }) {
   const clipboard = useStore((s) => s.clipboard)
   const copyTrack = useStore((s) => s.copyTrack)
   const pasteTrack = useStore((s) => s.pasteTrack)
+  const saveClip = useStore((s) => s.saveClip)
+  const loadClip = useStore((s) => s.loadClip)
+  const mode = useStore((s) => s.mode)
 
   const playCol = currentStep >= 0 ? currentStep % 16 : -1
 
@@ -24,6 +27,18 @@ export function StepSequencer({ track }: { track: Track }) {
           16 steps = 1 bar · click a step to cycle soft/med/hard/off · pattern loops every bar
         </span>
         <div className="spacer" />
+        {mode === 'sandbox' && (
+          <div className="clip-strip">
+            {track.clips.map((c) => (
+              <button key={c.id} className="clip-chip" title="Load this clip" onClick={() => loadClip(track.id, c.id)}>
+                {c.name}
+              </button>
+            ))}
+            <button className="clip-add" title="Save current pattern as a new clip" onClick={() => saveClip(track.id)}>
+              +
+            </button>
+          </div>
+        )}
         <button className="clear-btn" onClick={() => copyTrack(track.id)}>
           Copy
         </button>

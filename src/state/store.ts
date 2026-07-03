@@ -1,8 +1,11 @@
 import { create } from 'zustand'
-import type { ArrangementState, DrumLane, DrumPattern, Note, SectionType, SynthParams, Track } from '../types'
+import type { ArrangementState, DrumLane, DrumPattern, Note, Scene, SectionType, SynthParams, Track } from '../types'
 import { engine } from '../audio/engine'
 import { findLesson, LESSONS, nextLessonId, sandboxTracks, type Lesson, type LessonParams } from '../lessons/curriculum'
 import type { ScoreMap } from '../lessons/framework'
+
+let clipCounter = 0
+let sceneCounter = 0
 
 // step-sequencer accent cycle: click cycles a step through these levels (0 = off)
 const VELOCITY_LEVELS = [0, 0.5, 0.75, 1]
@@ -60,15 +63,20 @@ export interface AppState {
   lessonParams: LessonParams
   feedback: { pass: boolean; message: string } | null
   paramScores: ScoreMap | null
-  sandboxSnapshot: { tracks: Track[]; bpm: number; loopBars: number; selectedTrackId: string } | null
+  sandboxSnapshot: { tracks: Track[]; bpm: number; loopBars: number; selectedTrackId: string; scenes: Scene[] } | null
   past: HistorySnapshot[]
   future: HistorySnapshot[]
   clipboard: Clipboard | null
+  scenes: Scene[]
+  /** User-toggleable scale highlighting (Ableton's "Scale Mode"), independent of any lesson's
+   * own scalePcs — root is a pitch class 0..11. */
+  scaleLock: { root: number; scale: string } | null
 
   lesson: () => Lesson | undefined
   selectTrack: (id: string) => void
   addNote: (trackId: string, pitch: number, start: number) => void
   removeNote: (trackId: string, noteId: string) => void
+  updateNote: (trackId: string, noteId: string, patch: Partial<Pick<Note, 'start' | 'pitch' | 'duration'>>) => void
   clearTrack: (trackId: string) => void
   toggleDrum: (trackId: string, lane: DrumLane, step: number) => void
   setSynth: (trackId: string, patch: Partial<SynthParams>) => void
@@ -90,6 +98,17 @@ export interface AppState {
   redo: () => void
   copyTrack: (trackId: string) => void
   pasteTrack: (trackId: string) => void
+  saveClip: (trackId: string) => void
+  loadClip: (trackId: string, clipId: string) => void
+  deleteClip: (trackId: string, clipId: string) => void
+  addScene: () => void
+  deleteScene: (sceneId: string) => void
+  assignSceneClip: (sceneId: string, trackId: string, clipId: string | null) => void
+  triggerScene: (sceneId: string) => void
+  setAutomationPoint: (trackId: string, time: number, value: number) => void
+  removeAutomationPoint: (trackId: string, time: number) => void
+  clearAutomation: (trackId: string) => void
+  setScaleLock: (lock: { root: number; scale: string } | null) => void
 }
 
 const firstLesson = (() => {
@@ -120,6 +139,8 @@ export const useStore = create<AppState>()((set, get) => ({
   past: [],
   future: [],
   clipboard: null,
+  scenes: [],
+  scaleLock: null,
 
   lesson: () => (get().mode === 'lesson' ? findLesson(get().currentLessonId) : undefined),
 
@@ -150,6 +171,18 @@ export const useStore = create<AppState>()((set, get) => ({
       ),
     })
   },
+
+  // Deliberately does not call pushHistory — used for the live-updating part of a drag gesture.
+  // The caller pushes history once at drag-start so a whole drag is a single undo step, not one
+  // entry per pixel of movement.
+  updateNote: (trackId, noteId, patch) =>
+    set({
+      tracks: get().tracks.map((t) =>
+        t.id === trackId
+          ? { ...t, notes: t.notes.map((x) => (x.id === noteId ? { ...x, ...patch } : x)) }
+          : t,
+      ),
+    }),
 
   clearTrack: (trackId) => {
     get().pushHistory()
@@ -231,7 +264,7 @@ export const useStore = create<AppState>()((set, get) => ({
     if (state.isPlaying) state.stop()
     const snapshot =
       state.mode === 'sandbox'
-        ? { tracks: state.tracks, bpm: state.bpm, loopBars: state.loopBars, selectedTrackId: state.selectedTrackId }
+        ? { tracks: state.tracks, bpm: state.bpm, loopBars: state.loopBars, selectedTrackId: state.selectedTrackId, scenes: state.scenes }
         : state.sandboxSnapshot
     const s = lesson.setup()
     set({
@@ -248,6 +281,7 @@ export const useStore = create<AppState>()((set, get) => ({
       paramScores: null,
       currentStep: -1,
       sandboxSnapshot: snapshot,
+      scenes: [],
       past: [],
       future: [],
     })
@@ -263,6 +297,7 @@ export const useStore = create<AppState>()((set, get) => ({
       bpm: 124,
       loopBars: 4,
       selectedTrackId: 'drums',
+      scenes: [],
     }
     set({
       mode: 'sandbox',
@@ -275,6 +310,7 @@ export const useStore = create<AppState>()((set, get) => ({
       paramScores: null,
       currentStep: -1,
       noteLength: 2,
+      scenes: snap.scenes,
       past: [],
       future: [],
     })
@@ -376,6 +412,127 @@ export const useStore = create<AppState>()((set, get) => ({
     })
     engine.sync(get().tracks)
   },
+
+  // ---------- clips + scenes (Session-View analog, sandbox only) ----------
+  // A clip is a named snapshot of a track's live notes/pattern: saving copies them in,
+  // loading copies them back out. This trades a fully live-referenced clip model for one
+  // that needs zero changes to the engine, the store's note/pattern actions, or any of the
+  // existing lesson validators — all of which read a track's notes/pattern directly.
+
+  saveClip: (trackId) => {
+    const track = get().tracks.find((t) => t.id === trackId)
+    if (!track) return
+    const clip = {
+      id: `clip${clipCounter++}`,
+      name: `Clip ${track.clips.length + 1}`,
+      notes: track.notes.map((n) => ({ ...n })),
+      pattern: Object.fromEntries(Object.entries(track.pattern).map(([k, v]) => [k, [...v]])) as DrumPattern,
+    }
+    set({
+      tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, clips: [...t.clips, clip] } : t)),
+    })
+  },
+
+  loadClip: (trackId, clipId) => {
+    const track = get().tracks.find((t) => t.id === trackId)
+    const clip = track?.clips.find((c) => c.id === clipId)
+    if (!track || !clip) return
+    get().pushHistory()
+    set({
+      tracks: get().tracks.map((t) =>
+        t.id === trackId
+          ? {
+              ...t,
+              notes: clip.notes.map((n) => ({ ...n, id: `u${noteCounter++}` })),
+              pattern: Object.fromEntries(Object.entries(clip.pattern).map(([k, v]) => [k, [...v]])) as DrumPattern,
+            }
+          : t,
+      ),
+    })
+    engine.sync(get().tracks)
+  },
+
+  deleteClip: (trackId, clipId) => {
+    set({
+      tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, clips: t.clips.filter((c) => c.id !== clipId) } : t)),
+      scenes: get().scenes.map((s) => {
+        if (s.clipIds[trackId] !== clipId) return s
+        const clipIds = { ...s.clipIds }
+        delete clipIds[trackId]
+        return { ...s, clipIds }
+      }),
+    })
+  },
+
+  addScene: () => {
+    sceneCounter += 1
+    const scene: Scene = { id: `scene${sceneCounter}`, name: `Scene ${sceneCounter}`, clipIds: {} }
+    set({ scenes: [...get().scenes, scene] })
+  },
+
+  deleteScene: (sceneId) => set({ scenes: get().scenes.filter((s) => s.id !== sceneId) }),
+
+  assignSceneClip: (sceneId, trackId, clipId) => {
+    set({
+      scenes: get().scenes.map((s) => {
+        if (s.id !== sceneId) return s
+        const clipIds = { ...s.clipIds }
+        if (clipId) clipIds[trackId] = clipId
+        else delete clipIds[trackId]
+        return { ...s, clipIds }
+      }),
+    })
+  },
+
+  triggerScene: (sceneId) => {
+    const scene = get().scenes.find((s) => s.id === sceneId)
+    if (!scene) return
+    get().pushHistory()
+    const tracks = get().tracks.map((t) => {
+      const clipId = scene.clipIds[t.id]
+      const clip = clipId ? t.clips.find((c) => c.id === clipId) : undefined
+      if (!clip) return t
+      return {
+        ...t,
+        notes: clip.notes.map((n) => ({ ...n, id: `u${noteCounter++}` })),
+        pattern: Object.fromEntries(Object.entries(clip.pattern).map(([k, v]) => [k, [...v]])) as DrumPattern,
+      }
+    })
+    set({ tracks })
+    engine.sync(tracks)
+  },
+
+  // ---------- filter-cutoff automation (basic single-parameter breakpoint envelope) ----------
+
+  setAutomationPoint: (trackId, time, value) => {
+    get().pushHistory()
+    set({
+      tracks: get().tracks.map((t) => {
+        if (t.id !== trackId) return t
+        const existing = t.cutoffAutomation ?? []
+        const withoutNear = existing.filter((p) => Math.abs(p.time - time) > 0.001)
+        return { ...t, cutoffAutomation: [...withoutNear, { time, value }].sort((a, b) => a.time - b.time) }
+      }),
+    })
+  },
+
+  removeAutomationPoint: (trackId, time) => {
+    get().pushHistory()
+    set({
+      tracks: get().tracks.map((t) =>
+        t.id === trackId
+          ? { ...t, cutoffAutomation: (t.cutoffAutomation ?? []).filter((p) => Math.abs(p.time - time) > 0.001) }
+          : t,
+      ),
+    })
+  },
+
+  clearAutomation: (trackId) => {
+    get().pushHistory()
+    set({ tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, cutoffAutomation: undefined } : t)) })
+  },
+
+  setScaleLock: (lock) => set({ scaleLock: lock }),
 }))
 
 // expose for debugging / testing in dev

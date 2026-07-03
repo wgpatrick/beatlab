@@ -1,11 +1,31 @@
 import * as Tone from 'tone'
-import { DRUM_LANES, type DrumLane, type SynthParams, type TargetPatch, type Track } from '../types'
+import { DRUM_LANES, type AutomationPoint, type DrumLane, type SynthParams, type TargetPatch, type Track } from '../types'
 import { useStore } from '../state/store'
+
+// log-space interpolation between breakpoints (frac: 0..1 through the loop) — cutoff perception
+// is logarithmic, so this reads as an evenly-paced sweep rather than one that rushes at the top.
+function interpolateAutomation(points: AutomationPoint[], frac: number): number {
+  const pts = [...points].sort((a, b) => a.time - b.time)
+  if (frac <= pts[0].time) return pts[0].value
+  if (frac >= pts[pts.length - 1].time) return pts[pts.length - 1].value
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i]
+    const b = pts[i + 1]
+    if (frac >= a.time && frac <= b.time) {
+      const t = (frac - a.time) / (b.time - a.time || 1)
+      return a.value * Math.pow(b.value / a.value, t)
+    }
+  }
+  return pts[pts.length - 1].value
+}
 
 interface SynthChain {
   synth: Tone.PolySynth<Tone.Synth>
   filter: Tone.Filter
+  panner: Tone.Panner
   vol: Tone.Volume
+  reverbSend: Tone.Gain
+  delaySend: Tone.Gain
 }
 
 interface DrumKit {
@@ -21,6 +41,10 @@ class Engine {
   private drums: DrumKit | null = null
   private repeatId: number | null = null
   private ready = false
+  // shared mixer return buses — every synth chain's reverb/delay send taps into these, matching
+  // the "one shared reverb + one shared delay return" minimal mixer every DAW tutorial starts with
+  private reverbBus: Tone.Reverb | null = null
+  private delayBus: Tone.FeedbackDelay | null = null
 
   async ensureStarted() {
     if (this.ready) return
@@ -28,6 +52,17 @@ class Engine {
     this.buildDrums()
     Tone.getDestination().volume.value = -2
     this.ready = true
+  }
+
+  // Lazy on purpose: ensureChain (via sync()) can run before the user has interacted with the
+  // page at all, i.e. before ensureStarted()/Tone.start() — Tone nodes can be constructed before
+  // the audio context starts, they just won't produce sound until it does.
+  private getBuses() {
+    if (!this.reverbBus) {
+      this.reverbBus = new Tone.Reverb({ decay: 2.2, wet: 1 }).toDestination()
+      this.delayBus = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.3, wet: 1 }).toDestination()
+    }
+    return { reverb: this.reverbBus, delay: this.delayBus! }
   }
 
   private buildDrums() {
@@ -103,11 +138,19 @@ class Engine {
   private ensureChain(track: Track): SynthChain {
     let chain = this.chains.get(track.id)
     if (!chain) {
+      const { reverb, delay } = this.getBuses()
       const filter = new Tone.Filter(track.synth.cutoff, 'lowpass')
+      const panner = new Tone.Panner(track.synth.pan)
       const vol = new Tone.Volume(track.synth.volume)
+      const reverbSend = new Tone.Gain(track.synth.sendReverb)
+      const delaySend = new Tone.Gain(track.synth.sendDelay)
       const synth = new Tone.PolySynth(Tone.Synth)
-      synth.chain(filter, vol, Tone.getDestination())
-      chain = { synth, filter, vol }
+      synth.chain(filter, panner, vol, Tone.getDestination())
+      panner.connect(reverbSend)
+      reverbSend.connect(reverb)
+      panner.connect(delaySend)
+      delaySend.connect(delay)
+      chain = { synth, filter, panner, vol, reverbSend, delaySend }
       this.chains.set(track.id, chain)
     }
     this.applyParams(chain, track.synth)
@@ -121,7 +164,10 @@ class Engine {
     })
     chain.filter.frequency.rampTo(p.cutoff, 0.02)
     chain.filter.Q.value = p.resonance
+    chain.panner.pan.value = p.pan
     chain.vol.volume.value = p.volume
+    chain.reverbSend.gain.value = p.sendReverb
+    chain.delaySend.gain.value = p.sendDelay
   }
 
   updateSynth(track: Track) {
@@ -135,7 +181,10 @@ class Engine {
       if (!synthIds.has(id)) {
         chain.synth.dispose()
         chain.filter.dispose()
+        chain.panner.dispose()
         chain.vol.dispose()
+        chain.reverbSend.dispose()
+        chain.delaySend.dispose()
         this.chains.delete(id)
       }
     }
@@ -204,6 +253,11 @@ class Engine {
       } else {
         const chain = this.chains.get(tr.id)
         if (!chain) continue
+        if (tr.cutoffAutomation && tr.cutoffAutomation.length) {
+          const frac = step / totalSteps
+          const hz = interpolateAutomation(tr.cutoffAutomation, frac)
+          chain.filter.frequency.linearRampToValueAtTime(hz, swingTime + stepSeconds)
+        }
         for (const n of tr.notes) {
           if (n.start === step) {
             const dur = Math.max(n.duration * stepSeconds * 0.9, 0.05)

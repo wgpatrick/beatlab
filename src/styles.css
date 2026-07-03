@@ -394,6 +394,29 @@ button {
   color: var(--red);
 }
 
+.seg-toggle {
+  padding: 3px 8px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--dim);
+  font-size: 10px;
+}
+.seg-toggle.on {
+  background: var(--accent);
+  color: #221600;
+  font-weight: 700;
+}
+
+.editor-toolbar select {
+  background: var(--panel3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 3px 4px;
+  font-size: 10px;
+}
+
 /* ---------- piano roll ---------- */
 .pianoroll {
   display: flex;
@@ -699,6 +722,129 @@ button.seq-label:hover {
   padding: 4px 16px 12px;
   color: var(--dim);
   font-size: 10px;
+}
+
+/* ---------- automation ---------- */
+.automation {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.automation-scroll {
+  overflow-x: auto;
+  background: #171717;
+}
+.automation-grid {
+  position: relative;
+  cursor: crosshair;
+}
+.automation-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+/* ---------- scenes (session-view analog) ---------- */
+.scenes {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+}
+.scene-grid {
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-x: auto;
+}
+.scene-row {
+  display: grid;
+  grid-template-columns: 120px repeat(auto-fit, minmax(90px, 1fr));
+  gap: 6px;
+  align-items: center;
+}
+.scene-header {
+  color: var(--dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.scene-track-col {
+  text-align: center;
+  font-weight: 700;
+}
+.scene-launch {
+  text-align: left;
+  padding: 6px 10px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text);
+  font-weight: 600;
+}
+.scene-launch:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+.scene-cell {
+  height: 28px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--dim);
+  font-size: 10px;
+}
+.scene-cell:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.scene-cell.assigned {
+  background: var(--panel3);
+  color: var(--accent);
+  font-weight: 700;
+}
+.scene-cell:disabled {
+  opacity: 0.3;
+}
+.scene-del {
+  color: var(--dim);
+  font-size: 11px;
+  padding: 4px;
+}
+.scene-del:hover {
+  color: var(--red);
+}
+.clip-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.clip-chip {
+  padding: 3px 8px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--dim);
+  font-size: 10px;
+}
+.clip-chip.on {
+  background: var(--accent);
+  color: #221600;
+}
+.clip-add {
+  width: 20px;
+  height: 20px;
+  background: var(--panel2);
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1;
+}
+.clip-add:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ---------- device panel ---------- */

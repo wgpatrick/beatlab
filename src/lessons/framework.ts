@@ -33,6 +33,9 @@ const PARAM_TOLERANCE: Record<Exclude<keyof SynthParams, 'osc'>, Tolerance> = {
   sustain: { tight: 0.08, loose: 0.2 },
   release: { tight: 0.3, loose: 0.8, log: true },
   volume: { tight: 3, loose: 8 },
+  pan: { tight: 0.15, loose: 0.4 },
+  sendReverb: { tight: 0.1, loose: 0.3 },
+  sendDelay: { tight: 0.1, loose: 0.3 },
 }
 
 function scoreOne(key: keyof SynthParams, got: unknown, want: unknown): ParamStatus {
@@ -103,6 +106,7 @@ export function synthTrack(
     pattern: emptyPattern(),
     synth: { ...DEFAULT_SYNTH, ...synth },
     muted: false,
+    clips: [],
   }
 }
 
@@ -116,6 +120,7 @@ export function drumTrack(steps: Partial<Record<DrumLane, number[]>> = {}): Trac
     pattern: patternOf(steps),
     synth: { ...DEFAULT_SYNTH },
     muted: false,
+    clips: [],
   }
 }
 

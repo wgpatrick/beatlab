@@ -9,6 +9,9 @@ export interface SynthParams {
   sustain: number // 0..1
   release: number
   volume: number // dB
+  pan: number // -1 (left) .. 1 (right)
+  sendReverb: number // 0..1, shared reverb return
+  sendDelay: number // 0..1, shared delay return
 }
 
 export interface Note {
@@ -42,6 +45,34 @@ export interface Track {
   pattern: DrumPattern
   synth: SynthParams
   muted: boolean
+  /** Saved variations of this track's content (sandbox only — lesson tracks don't use this).
+   * A clip is a named snapshot: saving copies the live notes/pattern in, loading copies them
+   * back out. Combined with Scene below this is BeatLab's Session-View analog. */
+  clips: Clip[]
+  /** Optional filter-cutoff breakpoint envelope over the loop (synth tracks only). Undefined =
+   * cutoff stays at the static SynthParams.cutoff value, as before. */
+  cutoffAutomation?: AutomationPoint[]
+}
+
+/** time: 0..1 fraction of the way through the loop. value: filter cutoff in Hz. */
+export interface AutomationPoint {
+  time: number
+  value: number
+}
+
+export interface Clip {
+  id: string
+  name: string
+  notes: Note[]
+  pattern: DrumPattern
+}
+
+export interface Scene {
+  id: string
+  name: string
+  /** trackId -> clipId. Launching a scene loads each mapped track's clip; unmapped tracks
+   * are left alone. */
+  clipIds: Record<string, string>
 }
 
 export const SECTION_TYPES = ['Intro', 'Buildup', 'Drop', 'Breakdown', 'Outro'] as const
@@ -77,4 +108,7 @@ export const DEFAULT_SYNTH: SynthParams = {
   sustain: 0.7,
   release: 0.3,
   volume: -10,
+  pan: 0,
+  sendReverb: 0,
+  sendDelay: 0,
 }
