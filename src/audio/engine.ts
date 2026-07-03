@@ -21,6 +21,15 @@ function interpolateAutomation(points: AutomationPoint[], frac: number): number 
 
 interface SynthChain {
   synth: Tone.PolySynth<Tone.Synth>
+  // oscillator bank: osc2 (detuned unison layer) and sub (fixed sine, one octave down) are
+  // separate PolySynths summed into the shared filter pre-filter, each gated by its own Gain so
+  // level 0 is silent and byte-identical to the pre-Phase-D signal path.
+  osc2: Tone.PolySynth<Tone.Synth>
+  osc2Gain: Tone.Gain
+  sub: Tone.PolySynth<Tone.Synth>
+  subGain: Tone.Gain
+  noise: Tone.NoiseSynth
+  noiseGain: Tone.Gain
   filter: Tone.Filter
   panner: Tone.Panner
   vol: Tone.Volume
@@ -145,12 +154,22 @@ class Engine {
       const reverbSend = new Tone.Gain(track.synth.sendReverb)
       const delaySend = new Tone.Gain(track.synth.sendDelay)
       const synth = new Tone.PolySynth(Tone.Synth)
-      synth.chain(filter, panner, vol, Tone.getDestination())
+      const osc2 = new Tone.PolySynth(Tone.Synth)
+      const osc2Gain = new Tone.Gain(0)
+      const sub = new Tone.PolySynth(Tone.Synth)
+      const subGain = new Tone.Gain(0)
+      const noise = new Tone.NoiseSynth({ noise: { type: 'white' } })
+      const noiseGain = new Tone.Gain(0)
+      synth.connect(filter)
+      osc2.chain(osc2Gain, filter)
+      sub.chain(subGain, filter)
+      noise.chain(noiseGain, filter)
+      filter.chain(panner, vol, Tone.getDestination())
       panner.connect(reverbSend)
       reverbSend.connect(reverb)
       panner.connect(delaySend)
       delaySend.connect(delay)
-      chain = { synth, filter, panner, vol, reverbSend, delaySend }
+      chain = { synth, osc2, osc2Gain, sub, subGain, noise, noiseGain, filter, panner, vol, reverbSend, delaySend }
       this.chains.set(track.id, chain)
     }
     this.applyParams(chain, track.synth)
@@ -158,10 +177,15 @@ class Engine {
   }
 
   private applyParams(chain: SynthChain, p: SynthParams) {
-    chain.synth.set({
-      oscillator: { type: p.osc },
-      envelope: { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release },
-    })
+    const env = { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release }
+    chain.synth.set({ oscillator: { type: p.osc }, envelope: env })
+    chain.osc2.set({ oscillator: { type: p.osc2Type }, envelope: env })
+    chain.sub.set({ oscillator: { type: 'sine' }, envelope: env })
+    chain.noise.set({ envelope: env })
+    chain.osc2Gain.gain.value = p.osc2Level
+    chain.subGain.gain.value = p.subLevel
+    chain.noiseGain.gain.value = p.noiseLevel
+    chain.filter.type = p.filterType
     chain.filter.frequency.rampTo(p.cutoff, 0.02)
     chain.filter.Q.value = p.resonance
     chain.panner.pan.value = p.pan
@@ -180,6 +204,12 @@ class Engine {
     for (const [id, chain] of this.chains) {
       if (!synthIds.has(id)) {
         chain.synth.dispose()
+        chain.osc2.dispose()
+        chain.osc2Gain.dispose()
+        chain.sub.dispose()
+        chain.subGain.dispose()
+        chain.noise.dispose()
+        chain.noiseGain.dispose()
         chain.filter.dispose()
         chain.panner.dispose()
         chain.vol.dispose()
@@ -253,15 +283,45 @@ class Engine {
       } else {
         const chain = this.chains.get(tr.id)
         if (!chain) continue
+        const p = tr.synth
+        // sampled once per 16th-note step (not audio-rate) — cheap and matches the resolution of
+        // every other per-step modulation here (swing, cutoff automation); plenty smooth at the
+        // slow rates an LFO is used for in this app.
+        const lfoOn = p.lfoDest !== 'off' && p.lfoDepth > 0
+        const lfoValue = lfoOn ? Math.sin(2 * Math.PI * p.lfoRate * time) : 0
+
+        let baseCutoff = p.cutoff
         if (tr.cutoffAutomation && tr.cutoffAutomation.length) {
-          const frac = step / totalSteps
-          const hz = interpolateAutomation(tr.cutoffAutomation, frac)
-          chain.filter.frequency.linearRampToValueAtTime(hz, swingTime + stepSeconds)
+          baseCutoff = interpolateAutomation(tr.cutoffAutomation, step / totalSteps)
         }
+        if (p.lfoDest === 'cutoff' && lfoOn) {
+          const hz = baseCutoff * Math.pow(2, p.lfoDepth * lfoValue)
+          chain.filter.frequency.linearRampToValueAtTime(hz, swingTime + stepSeconds)
+        } else if (tr.cutoffAutomation && tr.cutoffAutomation.length) {
+          chain.filter.frequency.linearRampToValueAtTime(baseCutoff, swingTime + stepSeconds)
+        }
+        if (p.lfoDest === 'amp' && lfoOn) {
+          chain.vol.volume.linearRampToValueAtTime(p.volume + p.lfoDepth * lfoValue * 12, swingTime + stepSeconds)
+        }
+
         for (const n of tr.notes) {
           if (n.start === step) {
             const dur = Math.max(n.duration * stepSeconds * 0.9, 0.05)
-            chain.synth.triggerAttackRelease(Tone.Frequency(n.pitch, 'midi').toFrequency(), dur, swingTime, n.velocity)
+            let freq = Tone.Frequency(n.pitch, 'midi').toFrequency()
+            if (p.lfoDest === 'pitch' && lfoOn) freq *= Math.pow(2, (p.lfoDepth * lfoValue * 100) / 1200)
+            chain.synth.triggerAttackRelease(freq, dur, swingTime, n.velocity)
+            if (p.osc2Level > 0) chain.osc2.triggerAttackRelease(freq * Math.pow(2, p.osc2Detune / 1200), dur, swingTime, n.velocity)
+            if (p.subLevel > 0) chain.sub.triggerAttackRelease(freq / 2, dur, swingTime, n.velocity)
+            if (p.noiseLevel > 0) chain.noise.triggerAttackRelease(dur, swingTime, n.velocity)
+            if (p.filterEnvAmount > 0) {
+              const peak = Math.max(baseCutoff * Math.pow(2, p.filterEnvAmount * 4), 20)
+              const sustainHz = Math.max(baseCutoff * Math.pow(2, p.filterEnvAmount * 4 * p.filterEnvSustain), 20)
+              chain.filter.frequency.cancelScheduledValues(swingTime)
+              chain.filter.frequency.setValueAtTime(Math.max(baseCutoff, 20), swingTime)
+              chain.filter.frequency.exponentialRampToValueAtTime(peak, swingTime + Math.max(p.filterEnvAttack, 0.001))
+              chain.filter.frequency.exponentialRampToValueAtTime(sustainHz, swingTime + Math.max(p.filterEnvAttack, 0.001) + Math.max(p.filterEnvDecay, 0.001))
+              chain.filter.frequency.exponentialRampToValueAtTime(Math.max(baseCutoff, 20), swingTime + dur + Math.max(p.filterEnvRelease, 0.001))
+            }
           }
         }
       }
@@ -282,26 +342,70 @@ class Engine {
   async playTarget(target: TargetPatch) {
     await this.ensureStarted()
     const p = target.params
-    const filter = new Tone.Filter(p.cutoff, 'lowpass')
+    const filter = new Tone.Filter(p.cutoff, p.filterType)
     filter.Q.value = p.resonance
     const vol = new Tone.Volume(p.volume)
     const synth = new Tone.PolySynth(Tone.Synth)
-    synth.set({
-      oscillator: { type: p.osc },
-      envelope: { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release },
-    })
-    synth.chain(filter, vol, Tone.getDestination())
+    const osc2 = new Tone.PolySynth(Tone.Synth)
+    const osc2Gain = new Tone.Gain(p.osc2Level)
+    const sub = new Tone.PolySynth(Tone.Synth)
+    const subGain = new Tone.Gain(p.subLevel)
+    const noise = new Tone.NoiseSynth({ noise: { type: 'white' } })
+    const noiseGain = new Tone.Gain(p.noiseLevel)
+    const env = { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release }
+    synth.set({ oscillator: { type: p.osc }, envelope: env })
+    osc2.set({ oscillator: { type: p.osc2Type }, envelope: env })
+    sub.set({ oscillator: { type: 'sine' }, envelope: env })
+    noise.set({ envelope: env })
+    synth.connect(filter)
+    osc2.chain(osc2Gain, filter)
+    sub.chain(subGain, filter)
+    noise.chain(noiseGain, filter)
+    filter.chain(vol, Tone.getDestination())
+
+    // LFO/filter-envelope here are sampled once per phrase note (there's no transport tick loop
+    // driving a one-shot preview like this) — same tradeoff as the main tick(), just at phrase-note
+    // resolution instead of 16th-note resolution.
+    const lfoOn = p.lfoDest !== 'off' && p.lfoDepth > 0
     const now = Tone.now() + 0.05
     let end = 0
     for (const n of target.phrase) {
-      synth.triggerAttackRelease(Tone.Frequency(n.pitch, 'midi').toFrequency(), n.dur, now + n.time)
+      const noteTime = now + n.time
+      const lfoValue = lfoOn ? Math.sin(2 * Math.PI * p.lfoRate * n.time) : 0
+      let freq = Tone.Frequency(n.pitch, 'midi').toFrequency()
+      if (p.lfoDest === 'pitch' && lfoOn) freq *= Math.pow(2, (p.lfoDepth * lfoValue * 100) / 1200)
+      synth.triggerAttackRelease(freq, n.dur, noteTime)
+      if (p.osc2Level > 0) osc2.triggerAttackRelease(freq * Math.pow(2, p.osc2Detune / 1200), n.dur, noteTime)
+      if (p.subLevel > 0) sub.triggerAttackRelease(freq / 2, n.dur, noteTime)
+      if (p.noiseLevel > 0) noise.triggerAttackRelease(n.dur, noteTime)
+      if (p.lfoDest === 'cutoff' && lfoOn) {
+        filter.frequency.setValueAtTime(Math.max(p.cutoff * Math.pow(2, p.lfoDepth * lfoValue), 20), noteTime)
+      }
+      if (p.lfoDest === 'amp' && lfoOn) {
+        vol.volume.setValueAtTime(p.volume + p.lfoDepth * lfoValue * 12, noteTime)
+      }
+      if (p.filterEnvAmount > 0) {
+        const peak = Math.max(p.cutoff * Math.pow(2, p.filterEnvAmount * 4), 20)
+        const sustainHz = Math.max(p.cutoff * Math.pow(2, p.filterEnvAmount * 4 * p.filterEnvSustain), 20)
+        filter.frequency.cancelScheduledValues(noteTime)
+        filter.frequency.setValueAtTime(Math.max(p.cutoff, 20), noteTime)
+        filter.frequency.exponentialRampToValueAtTime(peak, noteTime + Math.max(p.filterEnvAttack, 0.001))
+        filter.frequency.exponentialRampToValueAtTime(sustainHz, noteTime + Math.max(p.filterEnvAttack, 0.001) + Math.max(p.filterEnvDecay, 0.001))
+        filter.frequency.exponentialRampToValueAtTime(Math.max(p.cutoff, 20), noteTime + n.dur + Math.max(p.filterEnvRelease, 0.001))
+      }
       end = Math.max(end, n.time + n.dur)
     }
     setTimeout(() => {
       synth.dispose()
+      osc2.dispose()
+      osc2Gain.dispose()
+      sub.dispose()
+      subGain.dispose()
+      noise.dispose()
+      noiseGain.dispose()
       filter.dispose()
       vol.dispose()
-    }, (end + p.release + 0.6) * 1000)
+    }, (end + p.release + p.filterEnvRelease + 0.6) * 1000)
   }
 }
 

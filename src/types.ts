@@ -1,9 +1,12 @@
 export type OscType = 'sine' | 'triangle' | 'sawtooth' | 'square'
+export type FilterType = 'lowpass' | 'bandpass' | 'highpass'
+export type LfoDest = 'off' | 'pitch' | 'cutoff' | 'amp'
 
 export interface SynthParams {
   osc: OscType
   cutoff: number // Hz
   resonance: number // filter Q
+  filterType: FilterType
   attack: number // seconds
   decay: number
   sustain: number // 0..1
@@ -12,6 +15,25 @@ export interface SynthParams {
   pan: number // -1 (left) .. 1 (right)
   sendReverb: number // 0..1, shared reverb return
   sendDelay: number // 0..1, shared delay return
+  // second oscillator: same envelope as osc, detuned in cents, mixed in at osc2Level (0 = off)
+  osc2Type: OscType
+  osc2Level: number // 0..1
+  osc2Detune: number // cents
+  // sub-oscillator: fixed sine, one octave below osc, mixed in at subLevel (0 = off)
+  subLevel: number // 0..1
+  // noise generator: fixed white noise, mixed in at noiseLevel (0 = off)
+  noiseLevel: number // 0..1
+  // filter envelope: separate ADSR applied to filter cutoff per note-on, on top of the static
+  // cutoff/automation value. filterEnvAmount 0 = no movement (off, matches pre-Phase-D behavior).
+  filterEnvAmount: number // 0..1, sweep range up to ~4 octaves at full amount
+  filterEnvAttack: number
+  filterEnvDecay: number
+  filterEnvSustain: number // 0..1, fraction of the sweep held during the note
+  filterEnvRelease: number
+  // one LFO, fixed destination list (mirrors the reference course's synth), lfoDest 'off' = no effect
+  lfoRate: number // Hz
+  lfoDepth: number // 0..1
+  lfoDest: LfoDest
 }
 
 export interface Note {
@@ -103,6 +125,7 @@ export const DEFAULT_SYNTH: SynthParams = {
   osc: 'sawtooth',
   cutoff: 9000,
   resonance: 0.8,
+  filterType: 'lowpass',
   attack: 0.01,
   decay: 0.2,
   sustain: 0.7,
@@ -111,4 +134,17 @@ export const DEFAULT_SYNTH: SynthParams = {
   pan: 0,
   sendReverb: 0,
   sendDelay: 0,
+  osc2Type: 'sawtooth',
+  osc2Level: 0,
+  osc2Detune: 12,
+  subLevel: 0,
+  noiseLevel: 0,
+  filterEnvAmount: 0,
+  filterEnvAttack: 0.01,
+  filterEnvDecay: 0.2,
+  filterEnvSustain: 0.3,
+  filterEnvRelease: 0.2,
+  lfoRate: 4,
+  lfoDepth: 0,
+  lfoDest: 'off',
 }

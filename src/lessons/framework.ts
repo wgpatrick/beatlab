@@ -25,7 +25,7 @@ interface Tolerance {
   log?: boolean // compare in log2 space (octaves) instead of linear units
 }
 
-const PARAM_TOLERANCE: Record<Exclude<keyof SynthParams, 'osc'>, Tolerance> = {
+const PARAM_TOLERANCE: Partial<Record<keyof SynthParams, Tolerance>> = {
   cutoff: { tight: 0.2, loose: 0.6, log: true },
   resonance: { tight: 1.5, loose: 4 },
   attack: { tight: 0.25, loose: 0.7, log: true },
@@ -36,11 +36,24 @@ const PARAM_TOLERANCE: Record<Exclude<keyof SynthParams, 'osc'>, Tolerance> = {
   pan: { tight: 0.15, loose: 0.4 },
   sendReverb: { tight: 0.1, loose: 0.3 },
   sendDelay: { tight: 0.1, loose: 0.3 },
+  osc2Level: { tight: 0.15, loose: 0.35 },
+  osc2Detune: { tight: 8, loose: 25 },
+  subLevel: { tight: 0.15, loose: 0.35 },
+  noiseLevel: { tight: 0.15, loose: 0.35 },
+  filterEnvAmount: { tight: 0.15, loose: 0.35 },
+  filterEnvAttack: { tight: 0.25, loose: 0.7, log: true },
+  filterEnvDecay: { tight: 0.25, loose: 0.7, log: true },
+  filterEnvSustain: { tight: 0.15, loose: 0.35 },
+  filterEnvRelease: { tight: 0.3, loose: 0.8, log: true },
+  lfoRate: { tight: 0.3, loose: 0.7, log: true },
+  lfoDepth: { tight: 0.15, loose: 0.35 },
 }
 
+// string-typed params (osc, filterType, osc2Type, lfoDest, ...) score as an exact match; numeric
+// params use a perceptibility-tuned tolerance band (e.g. cutoff compared in octaves, not linear Hz).
 function scoreOne(key: keyof SynthParams, got: unknown, want: unknown): ParamStatus {
-  if (key === 'osc') return got === want ? 'correct' : 'wrong'
-  const tol = PARAM_TOLERANCE[key as Exclude<keyof SynthParams, 'osc'>]
+  if (typeof want === 'string') return got === want ? 'correct' : 'wrong'
+  const tol = PARAM_TOLERANCE[key]
   if (!tol) return got === want ? 'correct' : 'wrong'
   const g = got as number
   const w = want as number

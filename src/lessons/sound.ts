@@ -27,6 +27,12 @@ const P_OSC: (keyof SynthParams)[] = ['osc', 'volume']
 const P_FILTER: (keyof SynthParams)[] = [...P_OSC, 'cutoff']
 const P_RESONANCE: (keyof SynthParams)[] = [...P_FILTER, 'resonance']
 const P_FULL: (keyof SynthParams)[] = [...P_RESONANCE, 'attack', 'decay', 'sustain', 'release']
+// Phase D: synth engine depth, same cumulative-reveal pattern as the original four stages above.
+const P_OSCBANK: (keyof SynthParams)[] = [...P_FULL, 'osc2Type', 'osc2Level', 'osc2Detune', 'subLevel', 'noiseLevel']
+const P_FILTERENV: (keyof SynthParams)[] = [...P_OSCBANK, 'filterEnvAmount', 'filterEnvAttack', 'filterEnvDecay', 'filterEnvSustain', 'filterEnvRelease']
+const P_LFO: (keyof SynthParams)[] = [...P_FILTERENV, 'lfoRate', 'lfoDepth', 'lfoDest']
+const P_FILTERTYPE: (keyof SynthParams)[] = [...P_LFO, 'filterType']
+const P_EFFECTS: (keyof SynthParams)[] = [...P_FILTERTYPE, 'pan', 'sendReverb', 'sendDelay']
 
 function messageFor(scores: ScoreMap, hints: Partial<Record<keyof SynthParams, string>>, successMsg: string) {
   const entries = Object.entries(scores) as [keyof SynthParams, NonNullable<ScoreMap[keyof SynthParams]>][]
@@ -61,8 +67,11 @@ const CHORD_PHRASE_SECONDS = [
 ]
 
 const basePatch = (over: Partial<SynthParams>): SynthParams => ({
-  osc: 'sawtooth', cutoff: 9000, resonance: 0.8, attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3, volume: -10,
+  osc: 'sawtooth', cutoff: 9000, resonance: 0.8, filterType: 'lowpass', attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3, volume: -10,
   pan: 0, sendReverb: 0, sendDelay: 0,
+  osc2Type: 'sawtooth', osc2Level: 0, osc2Detune: 12, subLevel: 0, noiseLevel: 0,
+  filterEnvAmount: 0, filterEnvAttack: 0.01, filterEnvDecay: 0.2, filterEnvSustain: 0.3, filterEnvRelease: 0.2,
+  lfoRate: 4, lfoDepth: 0, lfoDest: 'off',
   ...over,
 })
 
@@ -324,6 +333,162 @@ const synthLessons: Lesson[] = [
       return pass('An analog string machine. You now have four patch recipes: pluck, pad, sub, organ, strings — that\'s a full arrangement\'s worth.')
     },
   },
+  {
+    id: 'osc-bank-thicken',
+    module: SYNTH,
+    title: 'The Oscillator Bank: Osc 2, Sub & Noise',
+    summary:
+      'One oscillator is where every patch so far started — but most synths give you more. OSC 2 is a second full oscillator, detuned a few cents against the first: the two waves drift in and out of phase, creating a shimmering "beating" thickness (the classic supersaw trick). SUB is a plain sine, fixed an octave down, adding weight without adding harmonics. NOISE is unpitched broadband hiss, mixed in for air and transient texture. All three sum into the same filter and envelope as the main oscillator — free layers, not new patches.',
+    task: 'Build a fat hybrid lead: turn on OSC 2 (same waveform is fine), detune it 10–45 cents, and mix it in at 35%+. Add SUB at 15%+ for low-end weight, and a light touch of NOISE (5–40%) for air.',
+    hints: [
+      'Too little detune and OSC 2 just doubles the volume; too much and it sounds like two separate notes. 10–45 cents is the "chorus" zone.',
+      'Sub is felt more than heard — solo it briefly (zero everything else) to check it is really an octave down.',
+      'Noise should be a whisper under the mix, not a hiss on top of it.',
+    ],
+    centerPitch: 64,
+    visibleParams: P_OSCBANK,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Lead', '#c678dd', { osc: 'sawtooth', cutoff: 8000, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.3 }, riffOneBar(64))],
+      loopBars: 1,
+      bpm: 118,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.osc2Level < 0.35) issues.push(`osc2 level ${(p.osc2Level * 100).toFixed(0)}% (need ≥ 35% to hear it)`)
+      if (Math.abs(p.osc2Detune) < 10 || Math.abs(p.osc2Detune) > 45)
+        issues.push(`osc2 detune ${p.osc2Detune.toFixed(0)}c (need 10–45 cents — enough to beat, not enough to sound like two notes)`)
+      if (p.subLevel < 0.15) issues.push(`sub level ${(p.subLevel * 100).toFixed(0)}% (need ≥ 15% for low-end weight)`)
+      if (p.noiseLevel < 0.05 || p.noiseLevel > 0.4) issues.push(`noise level ${(p.noiseLevel * 100).toFixed(0)}% (need 5–40% — a whisper of air, not a hiss)`)
+      if (issues.length) return fail('Not fat yet — ' + issues.join('; ') + '.')
+      return pass('That is a modern hybrid lead: a detuned unison layer for width, a sine sub for weight, noise for air — three free layers stacked under one envelope.')
+    },
+  },
+  {
+    id: 'filter-envelope-pop',
+    module: SYNTH,
+    title: 'Envelopes III: The Filter Envelope',
+    summary:
+      'Every envelope so far has shaped volume. A FILTER ENVELOPE is a second, independent ADSR — same shape, different job: it shapes the cutoff instead. Fast attack, short decay, low sustain on the filter envelope is the "pop" or "wow" under nearly every house and techno bassline: the filter snaps open on the hit, then closes back down, regardless of what the volume is doing.',
+    task: 'Give this bass a pop: set FILTER ENV AMOUNT to 50%+, ATTACK ≤ 50ms (instant), DECAY between 80ms and 600ms. Keep the base CUTOFF at 2500 Hz or below so the upward sweep is audible.',
+    hints: [
+      'Turn amount all the way up first so the movement is obvious, then dial it back to taste.',
+      'If the base cutoff is already bright, the envelope has nowhere to sweep up to — that is why this one starts dark.',
+      'This is the same ADSR shape as the amp envelope, just wired to a different destination.',
+    ],
+    centerPitch: 38,
+    visibleParams: P_FILTERENV,
+    setup: () => ({
+      tracks: [
+        synthTrack('synth', 'Pop Bass', '#56b6c2', { osc: 'sawtooth', cutoff: 500, resonance: 2, attack: 0.005, decay: 0.15, sustain: 0.2, release: 0.15 }, [
+          n(33, 0, 2), n(33, 4, 2), n(45, 8, 2), n(33, 12, 2),
+        ]),
+      ],
+      loopBars: 1,
+      bpm: 124,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.filterEnvAmount < 0.5) issues.push(`filter env amount ${(p.filterEnvAmount * 100).toFixed(0)}% (need ≥ 50% — the sweep must be big enough to hear)`)
+      if (p.filterEnvAttack > 0.05) issues.push(`filter env attack ${(p.filterEnvAttack * 1000).toFixed(0)}ms (need ≤ 50ms — instant pop)`)
+      if (p.filterEnvDecay < 0.08 || p.filterEnvDecay > 0.6) issues.push(`filter env decay ${(p.filterEnvDecay * 1000).toFixed(0)}ms (need 80–600ms)`)
+      if (p.cutoff > 2500) issues.push(`base cutoff ${Math.round(p.cutoff)} Hz (need ≤ 2500 Hz so the sweep upward is audible)`)
+      if (issues.length) return fail('Not popping yet — ' + issues.join('; ') + '.')
+      return pass('That "wow" on every hit is the filter envelope — a second ADSR, independent of volume, dedicated to cutoff movement. Classic techno/house bassline move.')
+    },
+  },
+  {
+    id: 'lfo-wobble',
+    module: SYNTH,
+    title: 'The LFO: Modulation That Repeats',
+    summary:
+      'An LFO (low-frequency oscillator) is a wave too slow to hear as a pitch — instead it cycles a knob up and down automatically, forever, at a rate you set. This synth has one LFO with three fixed destinations: PITCH (vibrato), CUTOFF (wobble/wah), AMP (tremolo). A slow rate on cutoff, at real depth, is the entire dubstep/trance "wobble bass" technique in one control.',
+    task: 'Build a wobble bass: set LFO DEST to CUTOFF, RATE between 0.5 Hz and 4 Hz, DEPTH ≥ 40%, on a held note so the pulsing is obvious.',
+    hints: [
+      'Rate is cycles per second — 2 Hz means the filter opens and closes twice a second.',
+      'Depth is how far it swings, not how fast — crank it to hear the full range first.',
+      'Try PITCH and AMP too once CUTOFF passes — same knob, three completely different effects.',
+    ],
+    centerPitch: 38,
+    visibleParams: P_LFO,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Wobble', '#98c379', { osc: 'sawtooth', cutoff: 2000, resonance: 3, attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.3 }, [n(31, 0, 16)])],
+      loopBars: 1,
+      bpm: 128,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.lfoDest !== 'cutoff') issues.push(`LFO destination is ${p.lfoDest.toUpperCase()} (need CUTOFF for a wobble)`)
+      if (p.lfoRate < 0.5 || p.lfoRate > 4) issues.push(`LFO rate ${p.lfoRate.toFixed(2)}Hz (need 0.5–4Hz — slow enough to hear each pulse)`)
+      if (p.lfoDepth < 0.4) issues.push(`LFO depth ${(p.lfoDepth * 100).toFixed(0)}% (need ≥ 40% — deep enough to hear the filter swing)`)
+      if (issues.length) return fail('Not wobbling yet — ' + issues.join('; ') + '.')
+      return pass('That rhythmic pulse — one LFO, cycling the filter open and closed on a loop — is the entire dubstep/trance-gate wobble-bass technique.')
+    },
+  },
+  {
+    id: 'filter-type-carve',
+    module: SYNTH,
+    title: 'Filter Types: Low-Pass, Band-Pass, High-Pass',
+    summary:
+      'Every filter lesson so far used LOW-PASS: cut the highs, keep the lows. Flip it to HIGH-PASS and it does the opposite — cut the lows, keep the highs, thinning a sound out so it doesn\'t compete with a bass in the low end. BAND-PASS keeps only a narrow window in the middle, for telephone/vowel-like or resonant-sweep effects. Same cutoff and resonance knobs, three different jobs depending on type.',
+    task: 'Make a thin, bright pluck: switch FILTER TYPE to HIGH-PASS and set CUTOFF between 400 Hz and 3000 Hz so the low end is audibly gone.',
+    hints: [
+      'Sweep the cutoff up and down on high-pass — notice it removes the opposite end from a low-pass sweep.',
+      'This is the move for carving space in a mix: high-pass everything except the bass and kick.',
+    ],
+    centerPitch: 60,
+    visibleParams: P_FILTERTYPE,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Thin Pluck', '#f7c948', { osc: 'square', cutoff: 12000, attack: 0.005, decay: 0.2, sustain: 0.1, release: 0.2 }, riffOneBar(60))],
+      loopBars: 1,
+      bpm: 120,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.filterType !== 'highpass') issues.push(`filter type is ${p.filterType.toUpperCase()} (need HIGH-PASS to cut the lows instead of the highs)`)
+      if (p.cutoff < 400 || p.cutoff > 3000) issues.push(`cutoff ${Math.round(p.cutoff)} Hz (need 400–3000 Hz so the low end is audibly gone)`)
+      if (issues.length) return fail('Not thinned out yet — ' + issues.join('; ') + '.')
+      return pass('High-pass: the opposite move from every filter lesson so far — cutting lows instead of highs. Same knob, same synth, a totally different job: carving space in a mix.')
+    },
+  },
+  {
+    id: 'space-sends',
+    module: SYNTH,
+    title: 'Effects: Reverb & Delay Sends',
+    summary:
+      'REVERB simulates a room\'s natural decay — it makes a dry sound feel like it\'s somewhere. DELAY repeats it as discrete, fading echoes. Both live on shared return buses (exactly like a real mixer\'s send/return tracks): every track\'s SEND knob controls how much of its signal bleeds into that one shared reverb or delay, without leaving the dry sound behind. PAN places a sound left-to-right in the stereo field.',
+    task: 'Push this pad into a big room: raise REVERB send to 35%+, add a touch of DELAY (5–50%), and PAN it off-center by 0.1–0.6 in either direction.',
+    hints: [
+      'Reverb and delay are shared buses — turning up the send on one track doesn\'t affect any other track\'s dry signal.',
+      'A little delay under a lot of reverb reads as "one space"; a lot of delay under a little reverb reads as "distinct echoes".',
+      'Full-hard-left/right pan (±1) collapses a sound to one speaker — that\'s rarely what you want for a pad meant to sit in the background.',
+    ],
+    centerPitch: 60,
+    visibleParams: P_EFFECTS,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Pad', '#61afef', { osc: 'triangle', cutoff: 3000, attack: 0.5, decay: 0.3, sustain: 0.7, release: 1.0 }, [n(57, 0, 16), n(60, 0, 16), n(64, 0, 16)])],
+      loopBars: 1,
+      bpm: 100,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.sendReverb < 0.35) issues.push(`reverb send ${(p.sendReverb * 100).toFixed(0)}% (need ≥ 35% — push it into a big room)`)
+      if (p.sendDelay < 0.05 || p.sendDelay > 0.5) issues.push(`delay send ${(p.sendDelay * 100).toFixed(0)}% (need 5–50%)`)
+      if (Math.abs(p.pan) < 0.1 || Math.abs(p.pan) > 0.6)
+        issues.push(`pan ${p.pan.toFixed(2)} (need 0.1–0.6 off-center, either direction — enough to place it, not so much it falls out of the mix)`)
+      if (issues.length) return fail('Not placed yet — ' + issues.join('; ') + '.')
+      return pass('Reverb and delay are shared return buses — every track sends into the same two effects, just like a real mixer\'s send/return tracks. Pan puts it somewhere in the stereo field.')
+    },
+  },
 ]
 
 // ================= MODULE 5: EAR TRAINING =================
@@ -344,6 +509,7 @@ function matchLesson(opts: {
   loopBars?: number
   bpm?: number
   centerPitch?: number
+  visibleParams?: (keyof SynthParams)[]
 }): Lesson {
   return {
     id: opts.id,
@@ -354,7 +520,7 @@ function matchLesson(opts: {
     hints: opts.hints,
     centerPitch: opts.centerPitch ?? 58,
     target: { params: opts.target, phrase: opts.phrase },
-    visibleParams: P_FULL,
+    visibleParams: opts.visibleParams ?? P_FULL,
     setup: () => ({
       tracks: [synthTrack('synth', 'Mystery', '#61afef', opts.userStart, opts.userNotes())],
       loopBars: opts.loopBars ?? 1,
@@ -688,6 +854,57 @@ const earLessons: Lesson[] = [
       )
     },
   },
+  matchLesson({
+    id: 'match-supersaw-lead',
+    title: 'Match: The Supersaw Lead',
+    summary:
+      'This lead isn\'t one oscillator — it\'s the oscillator bank from the Synthesis module: a detuned second layer for width, a sub for weight. Your job is to hear the layering, not just the waveform.',
+    taskNote: 'Focus on width (osc2) and low-end weight (sub) — the base waveform and cutoff are already close.',
+    hints: [
+      'A/B your loop against the target — does yours sound thin and single-note by comparison? That\'s missing osc2.',
+      'Too much detune sounds like two separate pitches; too little and osc2 just adds volume with no shimmer.',
+      'The weight underneath isn\'t harmonics — it\'s a plain sine, an octave down.',
+    ],
+    target: basePatch({ osc: 'sawtooth', cutoff: 9000, osc2Type: 'sawtooth', osc2Level: 0.6, osc2Detune: 25, subLevel: 0.3, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.3 }),
+    phrase: ARP_PHRASE_SECONDS,
+    userNotes: () => ARP_PHRASE_NOTES.map((x) => ({ ...x })),
+    userStart: { osc: 'sawtooth', cutoff: 9000, osc2Level: 0, osc2Detune: 12, subLevel: 0, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.3 },
+    paramKeys: ['osc2Level', 'osc2Detune', 'subLevel'],
+    paramHints: {
+      osc2Level: 'thickness: there is a second layer under this lead — turn up Osc2 to match the width',
+      osc2Detune: 'shimmer: enough detune to beat against the first layer, not so much it sounds like two notes',
+      subLevel: 'low end: there is real weight under this lead that a single oscillator can\'t make — that\'s the sub',
+    },
+    successMsg: 'You matched the layering by ear — osc2 for width, sub for weight. That is how a thin single-oscillator lead becomes a "supersaw".',
+    centerPitch: 64,
+    visibleParams: P_OSCBANK,
+  }),
+  matchLesson({
+    id: 'match-wobble-bass',
+    title: 'Match: The Wobble Bass',
+    summary:
+      'A dubstep/trance wobble bass is one held note with an LFO doing all the work. This target isolates that: no filter envelope, no fancy oscillator layering — just a destination, a rate and a depth. If you\'ve done the LFO lesson, you already know what to listen for.',
+    taskNote: 'Identify the LFO destination first, then match rate (how fast it pulses) and depth (how far it swings).',
+    hints: [
+      'Count the pulses per second while it plays — that\'s the rate.',
+      'A shallow wobble barely dips; a deep one swings the filter almost fully open and closed.',
+      'This target holds one note the whole time — any movement you hear is the LFO, not new notes.',
+    ],
+    target: basePatch({ osc: 'sawtooth', cutoff: 1800, resonance: 4, lfoDest: 'cutoff', lfoRate: 2, lfoDepth: 0.65, attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.3, volume: -8 }),
+    phrase: [{ pitch: 31, time: 0, dur: 1.8 }],
+    userNotes: () => [n(31, 0, 16)],
+    userStart: { osc: 'sawtooth', cutoff: 1800, resonance: 2, lfoDest: 'off', lfoRate: 4, lfoDepth: 0, attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.3, volume: -8 },
+    paramKeys: ['lfoDest', 'lfoRate', 'lfoDepth'],
+    paramHints: {
+      lfoDest: 'that rhythmic pulsing is modulation — which destination makes a filter wobble?',
+      lfoRate: 'speed: count the pulses per second and match the rate',
+      lfoDepth: 'depth: how far does it swing — a shallow flutter or a deep chop?',
+    },
+    successMsg: 'Rate and depth by ear, on top of picking the right destination — that is LFO ear training, the same skill as reading any modulation-heavy patch.',
+    centerPitch: 38,
+    bpm: 124,
+    visibleParams: P_LFO,
+  }),
 ]
 
 export const SOUND_MODULES: Module[] = [
