@@ -103,15 +103,37 @@ class Engine {
   private masterBus: Tone.Gain | null = null
   private masterLimiter: Tone.Limiter | null = null
   private masterMeter: Tone.Meter | null = null
+  // Scope: passive taps on the master bus (analysers don't consume/alter the signal, just read
+  // it) driving a live oscilloscope/spectrum view in the device panel — a "watch the waveform
+  // change as you turn the knob" visualization of the whole mix.
+  private waveformAnalyser: Tone.Analyser | null = null
+  private fftAnalyser: Tone.Analyser | null = null
 
   private getMaster(): Tone.Gain {
     if (!this.masterBus) {
       this.masterBus = new Tone.Gain(1)
       this.masterLimiter = new Tone.Limiter(-1)
       this.masterMeter = new Tone.Meter({ smoothing: 0.8 })
+      this.waveformAnalyser = new Tone.Analyser('waveform', 1024)
+      this.fftAnalyser = new Tone.Analyser('fft', 256)
       this.masterBus.chain(this.masterLimiter, this.masterMeter, Tone.getDestination())
+      this.masterLimiter.connect(this.waveformAnalyser)
+      this.masterLimiter.connect(this.fftAnalyser)
     }
     return this.masterBus
+  }
+
+  /** Live time-domain samples (-1..1) of the master output, once per animation frame — or null
+   * before anything has ever played (the analyser is created lazily alongside the master bus). */
+  getWaveformData(): Float32Array | null {
+    this.getMaster() // lazily creates the analysers even before ensureStarted() has ever run
+    return this.waveformAnalyser!.getValue() as Float32Array
+  }
+
+  /** Live frequency-bin magnitudes (dB, typically -100..0) of the master output. */
+  getFftData(): Float32Array | null {
+    this.getMaster()
+    return this.fftAnalyser!.getValue() as Float32Array
   }
 
   // Pre-existing race, found via Phase J's capstone lesson testing: toggleDrum/addNote fire their

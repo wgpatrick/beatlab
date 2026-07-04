@@ -3,6 +3,7 @@ import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type Lfo2Des
 import { engine } from '../audio/engine'
 import { useStore } from '../state/store'
 import { Knob } from './Knob'
+import { Scope } from './Scope'
 import type { ParamStatus } from '../lessons/framework'
 
 const WAVES: { type: OscType; label: string; path: string; hint: string }[] = [
@@ -80,6 +81,7 @@ export function DevicePanel({ track }: { track: Track }) {
   if (track.kind === 'drums') {
     return (
       <div className="device">
+        <Scope />
         <Section title="DRUM RACK" hint="The 5-lane synthesized/sampled kit this track's step sequencer triggers">
           <div className="drum-pads">
             {DRUM_LANES.map((lane) => (
@@ -156,6 +158,7 @@ export function DevicePanel({ track }: { track: Track }) {
 
   return (
     <div className="device">
+      <Scope />
       {visible('osc') && (
         <Section title="OSC" hint="The main oscillator — the wave everything else in this patch is built around">
           <div className="wave-btns">

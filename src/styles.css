@@ -1166,6 +1166,35 @@ button.seq-label:hover {
   line-height: 1.5;
 }
 
+/* ---------- scope (oscilloscope / spectrum) ---------- */
+.scope-section {
+  flex-shrink: 0;
+}
+.scope-title {
+  cursor: default;
+}
+.scope-title:hover {
+  color: var(--dim);
+}
+.scope-canvas {
+  display: block;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  cursor: pointer;
+  width: 100%;
+  max-width: 220px;
+}
+.scope-canvas:hover {
+  border-color: var(--accent);
+}
+.scope-label {
+  padding: 4px 0 0;
+  font-size: 9px;
+  color: var(--dim);
+  max-width: none;
+  letter-spacing: 1px;
+}
+
 /* ---------- lesson panel ---------- */
 .lesson-panel {
   grid-area: lesson;
