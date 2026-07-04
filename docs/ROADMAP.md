@@ -11,21 +11,28 @@ automation — plus a follow-up pass on Web MIDI API feasibility (browser suppor
 record-then-quantize-strength workflow) after the user asked about recording live from a physical MIDI
 keyboard. As before: not a full spec, each item names the actual files/types it touches.
 
-## Status: Phases A-D shipped; Phase G implemented and verified (2026-07-03, not yet committed)
+## Status: Phases A-K all shipped (2026-07-04)
 
-All four phases from the prior roadmap are implemented, verified (headless-browser-driven), and committed
-on `main` (`8e7762b`, `aae0e9c`, `fe69717`, `72b5e92`). See [[beatlab-roadmap-progress]] for the full
-verification writeup. This document's "Current architecture snapshot" below reflects that shipped state
-(the prior roadmap's snapshot is now stale and superseded).
+All eleven phases (A through K, items 1-50) are implemented, verified (headless-browser-driven), and
+committed on `main`:
+- A-D: `8e7762b`, `aae0e9c`, `fe69717`, `72b5e92` (prior roadmap)
+- G (MIDI input, built first since it was independently requested): `9143808`
+- E (mixing effects): `9cc8112`
+- F (automation/modulation depth): `1e25d3c`
+- H (synth engine depth II): `c7eb3c8`
+- I (sampling): `e35bce0`
+- J (capstone): `44c282f`
+- K (mastering): `58be41d`
 
-**Phase G (items 32-36, MIDI input & humanized recording) is implemented and passing typecheck/build/
-headless-browser verification, but not yet committed to `main`.** Verified without physical hardware by
-exercising `midiInput.simulateMessage()` (a real test seam, not a mock — it feeds raw MIDI bytes through
-the exact parser a real device's `onmidimessage` uses) end-to-end through the real recording/playback
-pipeline; separately confirmed the actual `Connect MIDI` button (real `navigator.requestMIDIAccess()`)
-fails gracefully both with permission denied and with permission granted but zero devices attached
-(headless Chrome has neither). What's *not* verified yet: an actual physical keyboard through actual
-browser MIDI permission UI — that needs the user to try it directly.
+See [[beatlab-roadmap-progress]] for the full verification writeup, including the real bugs caught and
+fixed along the way (a NaN-producing log-scale knob at min=0, and a pre-existing Tone.js scheduling race
+in rapid multi-lane drum preview triggering). This document's "Current architecture snapshot" below
+reflects the pre-Phase-E state and is now stale/superseded by everything shipped since — treat it as
+history, not current fact.
+
+**What's *not* verified**: an actual physical MIDI keyboard through the real browser permission prompt
+(Phase G) — that needs the user to try it directly. Everything else was exercised through real code paths
+in headless Chrome (real Web Audio decoding, real Tone.js scheduling, real store/engine wiring), not mocks.
 
 ## Why this roadmap exists
 
