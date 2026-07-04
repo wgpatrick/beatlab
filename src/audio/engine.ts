@@ -29,10 +29,17 @@ interface SynthChain {
   // level 0 is silent and byte-identical to the pre-Phase-D signal path.
   osc2: Tone.PolySynth<Tone.Synth>
   osc2Gain: Tone.Gain
+  // Phase H: unison voice 3 — mirrors osc2Type/osc2Level at the opposite (negative) detune,
+  // active only when unisonVoices === 3. Silent (Gain 0) otherwise.
+  osc3: Tone.PolySynth<Tone.Synth>
+  osc3Gain: Tone.Gain
   sub: Tone.PolySynth<Tone.Synth>
   subGain: Tone.Gain
   noise: Tone.NoiseSynth
   noiseGain: Tone.Gain
+  // Phase H: FM voice — an additive layer (like sub/noise), not a mode of the main oscillator.
+  fm: Tone.PolySynth<Tone.FMSynth>
+  fmGain: Tone.Gain
   filter: Tone.Filter
   panner: Tone.Panner
   vol: Tone.Volume
@@ -181,10 +188,14 @@ class Engine {
       const synth = new Tone.PolySynth(Tone.Synth)
       const osc2 = new Tone.PolySynth(Tone.Synth)
       const osc2Gain = new Tone.Gain(0)
+      const osc3 = new Tone.PolySynth(Tone.Synth)
+      const osc3Gain = new Tone.Gain(0)
       const sub = new Tone.PolySynth(Tone.Synth)
       const subGain = new Tone.Gain(0)
       const noise = new Tone.NoiseSynth({ noise: { type: 'white' } })
       const noiseGain = new Tone.Gain(0)
+      const fm = new Tone.PolySynth(Tone.FMSynth)
+      const fmGain = new Tone.Gain(0)
 
       // Phase E insert effects — filter feeds into these (order decided by wireInserts below),
       // which feed into panner.
@@ -199,8 +210,10 @@ class Engine {
 
       synth.connect(filter)
       osc2.chain(osc2Gain, filter)
+      osc3.chain(osc3Gain, filter)
       sub.chain(subGain, filter)
       noise.chain(noiseGain, filter)
+      fm.chain(fmGain, filter)
 
       // Parallel ("New York") compression split — static, doesn't move with insertOrder.
       compIn.fan(compDry, compressor)
@@ -219,7 +232,7 @@ class Engine {
       modSend.connect(mod)
 
       chain = {
-        synth, osc2, osc2Gain, sub, subGain, noise, noiseGain, filter, panner, vol, reverbSend, delaySend,
+        synth, osc2, osc2Gain, osc3, osc3Gain, sub, subGain, noise, noiseGain, fm, fmGain, filter, panner, vol, reverbSend, delaySend,
         eq3, compIn, compDry, compressor, compWet, compOut, distortion, bitcrush, modSend, lastInsertOrder: [],
       }
       this.chains.set(track.id, chain)
@@ -255,13 +268,25 @@ class Engine {
 
   private applyParams(chain: SynthChain, p: SynthParams) {
     const env = { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release }
-    chain.synth.set({ oscillator: { type: p.osc }, envelope: env })
-    chain.osc2.set({ oscillator: { type: p.osc2Type }, envelope: env })
-    chain.sub.set({ oscillator: { type: 'sine' }, envelope: env })
+    // Glide/portamento applies to every pitched voice so a slide sounds consistent across the
+    // whole oscillator bank, not just the main osc.
+    chain.synth.set({ oscillator: { type: p.osc }, envelope: env, portamento: p.glide })
+    chain.osc2.set({ oscillator: { type: p.osc2Type }, envelope: env, portamento: p.glide })
+    // Unison voice 3: same waveform/level as osc2, mirrored at the opposite detune — only active
+    // (audible) when unisonVoices === 3; osc3Gain otherwise stays 0 regardless of osc2Level.
+    chain.osc3.set({ oscillator: { type: p.osc2Type }, envelope: env, portamento: p.glide })
+    chain.sub.set({ oscillator: { type: 'sine' }, envelope: env, portamento: p.glide })
     chain.noise.set({ envelope: env })
+    chain.fm.set({
+      envelope: env,
+      harmonicity: p.fmHarmonicity,
+      modulationIndex: p.fmModIndex,
+    })
     chain.osc2Gain.gain.value = p.osc2Level
+    chain.osc3Gain.gain.value = p.unisonVoices >= 3 ? p.osc2Level : 0
     chain.subGain.gain.value = p.subLevel
     chain.noiseGain.gain.value = p.noiseLevel
+    chain.fmGain.gain.value = p.fmLevel
     chain.filter.type = p.filterType
     chain.filter.frequency.rampTo(p.cutoff, 0.02)
     chain.filter.Q.value = p.resonance
@@ -299,10 +324,14 @@ class Engine {
         chain.synth.dispose()
         chain.osc2.dispose()
         chain.osc2Gain.dispose()
+        chain.osc3.dispose()
+        chain.osc3Gain.dispose()
         chain.sub.dispose()
         chain.subGain.dispose()
         chain.noise.dispose()
         chain.noiseGain.dispose()
+        chain.fm.dispose()
+        chain.fmGain.dispose()
         chain.filter.dispose()
         chain.panner.dispose()
         chain.vol.dispose()
@@ -340,8 +369,10 @@ class Engine {
     const freq = Tone.Frequency(pitch, 'midi').toFrequency()
     chain.synth.triggerAttack(freq, undefined, velocity)
     if (p.osc2Level > 0) chain.osc2.triggerAttack(freq * Math.pow(2, p.osc2Detune / 1200), undefined, velocity)
+    if (p.unisonVoices >= 3 && p.osc2Level > 0) chain.osc3.triggerAttack(freq * Math.pow(2, -p.osc2Detune / 1200), undefined, velocity)
     if (p.subLevel > 0) chain.sub.triggerAttack(freq / 2, undefined, velocity)
     if (p.noiseLevel > 0) chain.noise.triggerAttack(undefined, velocity)
+    if (p.fmLevel > 0) chain.fm.triggerAttack(freq, undefined, velocity)
   }
 
   liveNoteOff(track: Track, pitch: number) {
@@ -349,12 +380,14 @@ class Engine {
     if (!chain) return
     const freq = Tone.Frequency(pitch, 'midi').toFrequency()
     // triggerRelease on a note that was never attacked (e.g. osc2 was off at note-on) is a no-op
-    // in Tone.js's PolySynth, so it's safe to call all four unconditionally rather than tracking
+    // in Tone.js's PolySynth, so it's safe to call all these unconditionally rather than tracking
     // which layers were actually sounding.
     chain.synth.triggerRelease(freq)
     chain.osc2.triggerRelease(freq * Math.pow(2, track.synth.osc2Detune / 1200))
+    chain.osc3.triggerRelease(freq * Math.pow(2, -track.synth.osc2Detune / 1200))
     chain.sub.triggerRelease(freq / 2)
     chain.noise.triggerRelease()
+    chain.fm.triggerRelease(freq)
   }
 
   async play() {
@@ -519,33 +552,65 @@ class Engine {
           }
         }
 
-        for (const n of tr.notes) {
-          // Notes are stored in continuous (possibly fractional) step units — MIDI-recorded notes
-          // (Phase G) land between grid lines on purpose. quantizeStrength (0..100) blends a note's
-          // raw start toward the nearest whole step at *playback* time only; it never mutates the
-          // stored note. At strength 0 (default) or an already-grid-aligned note, effStart === n.start
-          // exactly, so this reduces to the pre-Phase-G `n.start === step` check with zero behavior change.
+        // Notes are stored in continuous (possibly fractional) step units — MIDI-recorded notes
+        // (Phase G) land between grid lines on purpose. quantizeStrength (0..100) blends a note's
+        // raw start toward the nearest whole step at *playback* time only; it never mutates the
+        // stored note. At strength 0 (default) or an already-grid-aligned note, effStart === n.start
+        // exactly, so this reduces to the pre-Phase-G `n.start === step` check with zero behavior change.
+        const due: { note: (typeof tr.notes)[number]; effStart: number }[] = []
+        for (const noteObj of tr.notes) {
           const effStart =
             s.quantizeStrength > 0
-              ? n.start + (Math.round(n.start) - n.start) * (s.quantizeStrength / 100)
-              : n.start
-          if (Math.floor(effStart) !== step) continue
-          const noteTime = swingTime + (effStart - step) * stepSeconds
-          const dur = Math.max(n.duration * stepSeconds * 0.9, 0.05)
-          let freq = Tone.Frequency(n.pitch, 'midi').toFrequency()
+              ? noteObj.start + (Math.round(noteObj.start) - noteObj.start) * (s.quantizeStrength / 100)
+              : noteObj.start
+          if (Math.floor(effStart) === step) due.push({ note: noteObj, effStart })
+        }
+
+        // Phase H arpeggiator: notes sharing this exact step (a stacked chord) fan out across the
+        // chord's own held duration instead of firing together — scoped to same-step chords, not a
+        // continuously-held/sustained arpeggiation across many bars (see docs/ROADMAP.md Phase H
+        // item 41). A single note "group" of size 1 is unaffected either way.
+        const arpeggiating = p.arpOn && due.length > 1
+        let ordered = due
+        if (arpeggiating) {
+          const up = [...due].sort((a, b) => a.note.pitch - b.note.pitch)
+          ordered =
+            p.arpPattern === 'down' ? [...up].reverse()
+            : p.arpPattern === 'updown' && up.length > 2 ? [...up, ...[...up].reverse().slice(1, -1)]
+            : up
+        }
+        const slotSeconds = stepSeconds / Math.max(1, p.arpRate)
+        const chordDurSteps = due.length ? Math.max(...due.map((d) => d.note.duration)) : 0
+        const arpSlots = arpeggiating ? Math.max(1, Math.round((chordDurSteps * stepSeconds) / slotSeconds)) : ordered.length
+
+        for (let i = 0; i < arpSlots; i++) {
+          const { note: noteObj, effStart } = arpeggiating ? ordered[i % ordered.length] : ordered[i]
+          const noteTime = arpeggiating
+            ? swingTime + (effStart - step) * stepSeconds + i * slotSeconds
+            : swingTime + (effStart - step) * stepSeconds
+          const dur = arpeggiating ? Math.max(slotSeconds * 0.85, 0.03) : Math.max(noteObj.duration * stepSeconds * 0.9, 0.05)
+          let freq = Tone.Frequency(noteObj.pitch, 'midi').toFrequency()
           if (p.lfoDest === 'pitch' && lfoOn) freq *= Math.pow(2, (p.lfoDepth * lfoValue * 100) / 1200)
-          chain.synth.triggerAttackRelease(freq, dur, noteTime, n.velocity)
-          if (p.osc2Level > 0) chain.osc2.triggerAttackRelease(freq * Math.pow(2, p.osc2Detune / 1200), dur, noteTime, n.velocity)
-          if (p.subLevel > 0) chain.sub.triggerAttackRelease(freq / 2, dur, noteTime, n.velocity)
-          if (p.noiseLevel > 0) chain.noise.triggerAttackRelease(dur, noteTime, n.velocity)
-          if (p.filterEnvAmount > 0) {
-            const peak = Math.max(baseCutoff * Math.pow(2, p.filterEnvAmount * 4), 20)
-            const sustainHz = Math.max(baseCutoff * Math.pow(2, p.filterEnvAmount * 4 * p.filterEnvSustain), 20)
+          chain.synth.triggerAttackRelease(freq, dur, noteTime, noteObj.velocity)
+          if (p.osc2Level > 0) chain.osc2.triggerAttackRelease(freq * Math.pow(2, p.osc2Detune / 1200), dur, noteTime, noteObj.velocity)
+          if (p.unisonVoices >= 3 && p.osc2Level > 0)
+            chain.osc3.triggerAttackRelease(freq * Math.pow(2, -p.osc2Detune / 1200), dur, noteTime, noteObj.velocity)
+          if (p.subLevel > 0) chain.sub.triggerAttackRelease(freq / 2, dur, noteTime, noteObj.velocity)
+          if (p.noiseLevel > 0) chain.noise.triggerAttackRelease(dur, noteTime, noteObj.velocity)
+          if (p.fmLevel > 0) chain.fm.triggerAttackRelease(freq, dur, noteTime, noteObj.velocity)
+          if (p.filterEnvAmount > 0 || p.keytrackAmount > 0 || p.velToFilterAmount > 0) {
+            // Keytracking/velocity shift *this note's* cutoff at note-on; filterEnvAmount's shape
+            // (if any) then sweeps relative to that shifted value rather than the raw baseCutoff.
+            const keytrackMult = Math.pow(2, (p.keytrackAmount * (noteObj.pitch - 60)) / 12)
+            const velMult = Math.pow(2, p.velToFilterAmount * (noteObj.velocity - 0.5) * 4)
+            const noteCutoff = Math.max(baseCutoff * keytrackMult * velMult, 20)
+            const peak = Math.max(noteCutoff * Math.pow(2, p.filterEnvAmount * 4), 20)
+            const sustainHz = Math.max(noteCutoff * Math.pow(2, p.filterEnvAmount * 4 * p.filterEnvSustain), 20)
             chain.filter.frequency.cancelScheduledValues(noteTime)
-            chain.filter.frequency.setValueAtTime(Math.max(baseCutoff, 20), noteTime)
+            chain.filter.frequency.setValueAtTime(noteCutoff, noteTime)
             chain.filter.frequency.exponentialRampToValueAtTime(peak, noteTime + Math.max(p.filterEnvAttack, 0.001))
             chain.filter.frequency.exponentialRampToValueAtTime(sustainHz, noteTime + Math.max(p.filterEnvAttack, 0.001) + Math.max(p.filterEnvDecay, 0.001))
-            chain.filter.frequency.exponentialRampToValueAtTime(Math.max(baseCutoff, 20), noteTime + dur + Math.max(p.filterEnvRelease, 0.001))
+            chain.filter.frequency.exponentialRampToValueAtTime(noteCutoff, noteTime + dur + Math.max(p.filterEnvRelease, 0.001))
           }
         }
       }

@@ -96,6 +96,10 @@ export function DevicePanel({ track }: { track: Track }) {
   const duckSourceOptions = allTracks.filter((t) => t.kind === 'drums' && t.id !== track.id)
   const showLfo2 = visible('lfo2Rate') || visible('lfo2Depth') || visible('lfo2Dest')
   const showMacro = visible('macroValue')
+  const showFm = visible('fmLevel') || visible('fmHarmonicity') || visible('fmModIndex')
+  const showUnison = visible('unisonVoices')
+  const showGlide = visible('glide')
+  const showArp = visible('arpOn') || visible('arpRate') || visible('arpPattern')
 
   const swapInsertOrder = (i: number) => {
     const next = [...p.insertOrder]
@@ -159,6 +163,36 @@ export function DevicePanel({ track }: { track: Track }) {
               <Knob label="Noise" value={p.noiseLevel} min={0} max={1} format={pct} status={statusOf('noiseLevel')} onChange={(v) => set({ noiseLevel: v })} />
             )}
           </div>
+          {showUnison && (
+            <div className="wave-btns" style={{ marginTop: 8, gridTemplateColumns: '1fr 1fr 1fr' }}>
+              {[1, 2, 3].map((v) => (
+                <button
+                  key={v}
+                  className={`wave ${p.unisonVoices === v ? 'on' : ''} ${p.unisonVoices === v && statusOf('unisonVoices') ? `status-${statusOf('unisonVoices')}` : ''}`}
+                  onClick={() => set({ unisonVoices: v as 1 | 2 | 3 })}
+                  title={`${v} voice${v > 1 ? 's' : ''}`}
+                >
+                  {v}V
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {showFm && (
+        <div className="device-section">
+          <div className="device-section-title">FM</div>
+          <div className="knob-row">
+            {visible('fmLevel') && (
+              <Knob label="Level" value={p.fmLevel} min={0} max={1} format={pct} status={statusOf('fmLevel')} onChange={(v) => set({ fmLevel: v })} />
+            )}
+            {visible('fmHarmonicity') && (
+              <Knob label="Harm" value={p.fmHarmonicity} min={0.5} max={8} format={(v) => v.toFixed(1)} status={statusOf('fmHarmonicity')} onChange={(v) => set({ fmHarmonicity: v })} />
+            )}
+            {visible('fmModIndex') && (
+              <Knob label="Mod Idx" value={p.fmModIndex} min={1} max={20} format={(v) => v.toFixed(0)} status={statusOf('fmModIndex')} onChange={(v) => set({ fmModIndex: v })} />
+            )}
+          </div>
         </div>
       )}
       {showFilter && (
@@ -206,6 +240,12 @@ export function DevicePanel({ track }: { track: Track }) {
             {visible('filterEnvRelease') && (
               <Knob label="Release" value={p.filterEnvRelease} min={0.01} max={4} log format={ms} status={statusOf('filterEnvRelease')} onChange={(v) => set({ filterEnvRelease: v })} />
             )}
+            {visible('keytrackAmount') && (
+              <Knob label="Keytrack" value={p.keytrackAmount} min={0} max={1} format={pct} status={statusOf('keytrackAmount')} onChange={(v) => set({ keytrackAmount: v })} />
+            )}
+            {visible('velToFilterAmount') && (
+              <Knob label="Vel→Cutoff" value={p.velToFilterAmount} min={0} max={1} format={pct} status={statusOf('velToFilterAmount')} onChange={(v) => set({ velToFilterAmount: v })} />
+            )}
           </div>
         </div>
       )}
@@ -225,6 +265,41 @@ export function DevicePanel({ track }: { track: Track }) {
             {visible('release') && (
               <Knob label="Release" value={p.release} min={0.01} max={4} log format={ms} status={statusOf('release')} onChange={(v) => set({ release: v })} />
             )}
+            {showGlide && (
+              <Knob label="Glide" value={Math.max(p.glide, 0.001)} min={0.001} max={1} log format={ms} status={statusOf('glide')} onChange={(v) => set({ glide: v < 0.0015 ? 0 : v })} />
+            )}
+          </div>
+        </div>
+      )}
+      {showArp && (
+        <div className="device-section">
+          <div className="device-section-title">ARPEGGIATOR</div>
+          {visible('arpOn') && (
+            <div className="wave-btns" style={{ marginBottom: 8, gridTemplateColumns: '1fr 1fr' }}>
+              <button className={`wave ${!p.arpOn ? 'on' : ''}`} onClick={() => set({ arpOn: false })}>
+                Off
+              </button>
+              <button className={`wave ${p.arpOn ? 'on' : ''}`} onClick={() => set({ arpOn: true })}>
+                On
+              </button>
+            </div>
+          )}
+          {visible('arpPattern') && (
+            <div className="wave-btns" style={{ marginBottom: 8, gridTemplateColumns: '1fr 1fr 1fr' }}>
+              {(['up', 'down', 'updown'] as const).map((pat) => (
+                <button key={pat} className={`wave ${p.arpPattern === pat ? 'on' : ''}`} onClick={() => set({ arpPattern: pat })}>
+                  {pat}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="knob-row">
+            {visible('arpRate') && (
+              <Knob label="Rate" value={p.arpRate} min={1} max={4} format={(v) => `${Math.round(v)}/step`} status={statusOf('arpRate')} onChange={(v) => set({ arpRate: Math.round(v) })} />
+            )}
+          </div>
+          <div className="device-note" style={{ padding: '8px 0 0' }}>
+            Arpeggiates notes stacked at the same grid position — hold a chord in the piano roll to hear it fan out.
           </div>
         </div>
       )}

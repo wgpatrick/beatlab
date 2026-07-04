@@ -76,6 +76,33 @@ export interface SynthParams {
   // Fixed single macro (not a user-remappable target list — see docs/ROADMAP.md Phase F item 30
   // for the scoping note): one knob drives cutoff, reverb send, and distortion mix together.
   macroValue: number // 0..1
+
+  // ---------- Phase H: synth engine depth II ----------
+  // FM voice: an additive layer alongside osc2/sub/noise (not a mode of the main oscillator,
+  // which stays subtractive) — a 2-operator carrier/modulator via Tone.FMSynth, mixed in at
+  // fmLevel (0 = off, matches every other oscillator-bank layer's convention).
+  fmLevel: number // 0..1
+  fmHarmonicity: number // carrier:modulator frequency ratio, ~0.5..8
+  fmModIndex: number // modulation index, ~1..20
+  // Unison: 1 = just the main oscillator (today's default patch, unchanged). 2 = adds osc2 at
+  // +osc2Detune (exactly today's existing behavior). 3 adds a third, symmetric voice mirrored at
+  // -osc2Detune, reusing osc2Type/osc2Level rather than new params — a real 3-voice unison stack,
+  // though without per-voice stereo panning (deferred — see docs/ROADMAP.md Phase H item 39).
+  unisonVoices: 1 | 2 | 3
+  // Glide/portamento: seconds to slide between consecutive notes' pitches, 0 = off (discrete
+  // steps, matches every prior patch).
+  glide: number
+  // Arpeggiator: fans out notes that share the same start step into a sequence across that
+  // step's duration, instead of triggering them all at once as a stacked chord — see
+  // docs/ROADMAP.md Phase H item 41 for why it's scoped to same-step chords specifically.
+  arpOn: boolean
+  arpRate: number // how many arp notes fit in one 16th-note step
+  arpPattern: 'up' | 'down' | 'updown'
+  // Keytracking/velocity-to-cutoff: shift this note's cutoff up/down at note-on, layered under
+  // (and compounding with) filterEnvAmount's own envelope shape if that's also active — see
+  // docs/ROADMAP.md Phase H item 42.
+  keytrackAmount: number // 0..1, higher notes brighten the cutoff
+  velToFilterAmount: number // 0..1, harder-played notes brighten the cutoff
 }
 
 export interface Note {
@@ -231,4 +258,14 @@ export const DEFAULT_SYNTH: SynthParams = {
   lfo2Depth: 0,
   lfo2Dest: 'off',
   macroValue: 0,
+  fmLevel: 0,
+  fmHarmonicity: 1,
+  fmModIndex: 5,
+  unisonVoices: 1,
+  glide: 0,
+  arpOn: false,
+  arpRate: 2,
+  arpPattern: 'up',
+  keytrackAmount: 0,
+  velToFilterAmount: 0,
 }

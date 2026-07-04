@@ -44,6 +44,14 @@ const P_DIST: (keyof SynthParams)[] = [...P_COMP, 'distortionAmount', 'distortio
 const P_MIX: (keyof SynthParams)[] = [...P_DIST, 'insertOrder', 'sendMod', 'duckSource', 'duckAmount']
 // Phase F: modulation matrix (LFO2) + macro — same cumulative-reveal pattern.
 const P_MOD: (keyof SynthParams)[] = [...P_MIX, 'lfo2Rate', 'lfo2Depth', 'lfo2Dest', 'macroValue']
+// Phase H: synth engine depth II — same cumulative-reveal pattern.
+const P_SYNTH2: (keyof SynthParams)[] = [
+  ...P_MOD,
+  'fmLevel', 'fmHarmonicity', 'fmModIndex',
+  'unisonVoices', 'glide',
+  'arpOn', 'arpRate', 'arpPattern',
+  'keytrackAmount', 'velToFilterAmount',
+]
 
 function messageFor(scores: ScoreMap, hints: Partial<Record<keyof SynthParams, string>>, successMsg: string) {
   const entries = Object.entries(scores) as [keyof SynthParams, NonNullable<ScoreMap[keyof SynthParams]>][]
@@ -494,6 +502,153 @@ const synthLessons: Lesson[] = [
         issues.push(`pan ${p.pan.toFixed(2)} (need 0.1–0.6 off-center, either direction — enough to place it, not so much it falls out of the mix)`)
       if (issues.length) return fail('Not placed yet — ' + issues.join('; ') + '.')
       return pass('Reverb and delay are shared return buses — every track sends into the same two effects, just like a real mixer\'s send/return tracks. Pan puts it somewhere in the stereo field.')
+    },
+  },
+  {
+    id: 'intro-fm',
+    module: SYNTH,
+    title: 'FM: A Second Synthesis Engine',
+    summary:
+      'Everything so far has been subtractive: start with a harmonically rich wave, carve it with a filter. FM synthesis works completely differently — one oscillator (the modulator) modulates a second oscillator\'s (the carrier\'s) frequency directly, generating entirely new harmonics with no filter involved. HARMONICITY sets the carrier:modulator frequency ratio (which harmonics appear); MOD INDEX sets how much modulation happens (how many harmonics, and how loud they get).',
+    task: 'Turn on the FM layer: set LEVEL to at least 60%, HARMONICITY to a whole number like 2 or 3, and MOD INDEX to at least 8 — listen for a bell-like or metallic tone that a subtractive oscillator can\'t make.',
+    hints: [
+      'Whole-number harmonicity ratios (1, 2, 3) sound pitched and musical; non-whole ratios (1.4, 2.7) sound clangorous and metallic — both are "correct FM," just different characters.',
+      'Mod index near 0 sounds almost like a plain sine; cranking it up adds more and more harmonics, fast.',
+      'Try turning FM level up while the other oscillators are silent (turn OSC volume down) to hear it in isolation.',
+    ],
+    centerPitch: 60,
+    visibleParams: P_SYNTH2,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'FM Bell', '#98c379', { osc: 'sine', cutoff: 14000, attack: 0.005, decay: 0.8, sustain: 0.2, release: 1.0, volume: -16 }, riffOneBar(60))],
+      loopBars: 1,
+      bpm: 100,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.fmLevel < 0.6) issues.push(`FM level ${Math.round(p.fmLevel * 100)}% (need ≥ 60%)`)
+      if (p.fmModIndex < 8) issues.push(`mod index ${p.fmModIndex.toFixed(1)} (need ≥ 8 for real harmonic content)`)
+      if (issues.length) return fail('Not there yet — ' + issues.join('; ') + '.')
+      return pass('That metallic/bell-like character is FM doing something a filter never could — generating new harmonics through modulation instead of subtracting them from an existing wave.')
+    },
+  },
+  {
+    id: 'intro-unison',
+    module: SYNTH,
+    title: 'Unison: Stacking Voices',
+    summary:
+      'The "supersaw" lesson used one detuned second oscillator for width. A real unison stack goes further: a third voice, detuned the opposite direction, makes the stack symmetric — up, center, down — for a noticeably thicker, wider sound than just two voices.',
+    task: 'Set UNISON to 3 voices with Osc2 level at least 40% and detune at least 15 cents — compare it against 2 voices by toggling back and forth.',
+    hints: [
+      'Unison 1 = just the main oscillator. Unison 2 = adds Osc2 at +detune (what "supersaw" used). Unison 3 adds a third voice mirrored at -detune.',
+      'Symmetric detune (one voice up, one down) is what makes a 3-voice stack sound centered and wide rather than just detuned to one side.',
+    ],
+    centerPitch: 64,
+    visibleParams: P_SYNTH2,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Unison Lead', '#c678dd', { osc: 'sawtooth', cutoff: 8000, osc2Type: 'sawtooth', osc2Level: 0, osc2Detune: 12, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.3 }, riffOneBar(64))],
+      loopBars: 1,
+      bpm: 110,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.unisonVoices < 3) issues.push(`unison is set to ${p.unisonVoices} voice(s) (need 3)`)
+      if (p.osc2Level < 0.4) issues.push(`osc2 level ${Math.round(p.osc2Level * 100)}% (need ≥ 40% so all 3 voices are actually audible)`)
+      if (p.osc2Detune < 15) issues.push(`detune ${p.osc2Detune.toFixed(0)}c (need ≥ 15c for an audible spread)`)
+      if (issues.length) return fail('Not a full stack yet — ' + issues.join('; ') + '.')
+      return pass('Three voices, symmetric detune — noticeably wider than the 2-voice supersaw. Real synths take this further (5, 7, even 16 voices), same principle.')
+    },
+  },
+  {
+    id: 'intro-glide',
+    module: SYNTH,
+    title: 'Glide: Sliding Between Notes',
+    summary:
+      'Every note so far has jumped discretely from pitch to pitch. GLIDE (portamento) makes consecutive notes slide smoothly from one to the next instead — the classic mono-synth-bass or theremin-like sound. It only matters between notes that overlap in time or sit close together; isolated notes with silence between them won\'t audibly glide.',
+    task: 'Set GLIDE to at least 100ms and listen to this legato bassline slide between notes instead of jumping.',
+    hints: [
+      'Glide time is how long the slide takes — short (30-80ms) is a quick "scoop," long (300ms+) is a slow theremin-like slide.',
+      'This bassline\'s notes are back-to-back with no gaps, so glide has continuous pitches to slide between.',
+    ],
+    centerPitch: 40,
+    visibleParams: P_SYNTH2,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Glide Bass', '#56b6c2', { osc: 'sawtooth', cutoff: 1000, attack: 0.01, decay: 0.2, sustain: 0.8, release: 0.1, volume: -8, glide: 0 }, [
+        n(33, 0, 4), n(36, 4, 4), n(38, 8, 4), n(31, 12, 4),
+      ])],
+      loopBars: 1,
+      bpm: 100,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      if (p.glide < 0.1) return fail(`Glide is ${Math.round(p.glide * 1000)}ms — need at least 100ms to hear a real slide.`)
+      return pass('That slide between notes instead of a jump is portamento/glide — the same mechanism behind classic mono-synth bass slides and theremin-style leads.')
+    },
+  },
+  {
+    id: 'intro-arp',
+    module: SYNTH,
+    title: 'Arpeggiator: Chords Into Sequences',
+    summary:
+      'An arpeggiator takes notes stacked at the same moment — a chord — and fans them out into a fast sequence instead, cycling up, down, or both. RATE controls how many arp notes fit in one 16th-note step (higher = faster); PATTERN controls the order.',
+    task: 'Turn the arpeggiator ON with PATTERN set to "up" and RATE at least 2 — you should hear this stacked chord turn into a fast rising sequence instead of playing as a block chord.',
+    hints: [
+      'The chord is already stacked in the piano roll — the arpeggiator changes how it\'s *played back*, not what\'s written.',
+      'Higher rate = more arp notes packed into the same amount of time, so it sounds faster/busier.',
+    ],
+    centerPitch: 64,
+    visibleParams: P_SYNTH2,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Arp Chord', '#f7c948', { osc: 'square', cutoff: 6000, attack: 0.005, decay: 0.15, sustain: 0.4, release: 0.15 }, [
+        n(57, 0, 16), n(60, 0, 16), n(64, 0, 16), n(69, 0, 16),
+      ])],
+      loopBars: 1,
+      bpm: 120,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (!p.arpOn) issues.push('arpeggiator is off')
+      if (p.arpPattern !== 'up') issues.push(`pattern is "${p.arpPattern}" (need "up")`)
+      if (p.arpRate < 2) issues.push(`rate is ${p.arpRate} (need ≥ 2)`)
+      if (issues.length) return fail('Not arpeggiating yet — ' + issues.join('; ') + '.')
+      return pass('That fast rising sequence, from one stacked chord, is exactly what an arpeggiator does — turns "what you wrote" into "how it\'s played back".')
+    },
+  },
+  {
+    id: 'intro-keytrack',
+    module: SYNTH,
+    title: 'Keytracking & Velocity-to-Filter',
+    summary:
+      'Real acoustic and analog instruments naturally get brighter on higher notes and harder hits — a filter that ignores pitch and velocity entirely can sound flat and lifeless by comparison. KEYTRACK brightens the filter for higher notes; VEL→CUTOFF brightens it for harder-played notes. Both need FILTER ENV\'s Amount above 0 to have something to modulate.',
+    task: 'With Filter Env Amount already active, set KEYTRACK to at least 50% and VEL→CUTOFF to at least 50% — higher notes and harder hits in this riff should sound audibly brighter than lower, softer ones.',
+    hints: [
+      'Keytracking is measured relative to middle C (MIDI 60) — notes above it brighten, below it darken, at the depth you set.',
+      'Velocity-to-cutoff reads each note\'s own velocity (already visible as color/opacity in the piano roll).',
+    ],
+    centerPitch: 60,
+    visibleParams: P_SYNTH2,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Keytrack Riff', '#61afef', { osc: 'sawtooth', cutoff: 800, resonance: 2, filterEnvAmount: 0.5, filterEnvAttack: 0.005, filterEnvDecay: 0.15, filterEnvSustain: 0.2, filterEnvRelease: 0.1, attack: 0.005, decay: 0.15, sustain: 0.3, release: 0.15 }, [
+        n(48, 0, 4, 0.4), n(60, 4, 4, 0.9), n(64, 8, 4, 0.5), n(72, 12, 4, 1.0),
+      ])],
+      loopBars: 1,
+      bpm: 110,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.filterEnvAmount <= 0) issues.push('Filter Env Amount is 0 — keytrack/velocity need it active to have something to modulate')
+      if (p.keytrackAmount < 0.5) issues.push(`keytrack ${Math.round(p.keytrackAmount * 100)}% (need ≥ 50%)`)
+      if (p.velToFilterAmount < 0.5) issues.push(`vel→cutoff ${Math.round(p.velToFilterAmount * 100)}% (need ≥ 50%)`)
+      if (issues.length) return fail('Not tracking yet — ' + issues.join('; ') + '.')
+      return pass('Higher notes and harder hits both brighten the filter now — the same responsiveness real acoustic and analog instruments have naturally.')
     },
   },
 ]

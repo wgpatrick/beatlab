@@ -65,6 +65,12 @@ const PARAM_TOLERANCE: Partial<Record<keyof SynthParams, Tolerance>> = {
   lfo2Rate: { tight: 0.3, loose: 0.7, log: true },
   lfo2Depth: { tight: 0.15, loose: 0.35 },
   macroValue: { tight: 0.15, loose: 0.35 },
+  fmLevel: { tight: 0.15, loose: 0.35 },
+  fmHarmonicity: { tight: 0.5, loose: 1.5 },
+  fmModIndex: { tight: 2, loose: 5 },
+  glide: { tight: 0.3, loose: 0.7, log: true },
+  keytrackAmount: { tight: 0.15, loose: 0.35 },
+  velToFilterAmount: { tight: 0.15, loose: 0.35 },
 }
 
 // string-typed params (osc, filterType, osc2Type, lfoDest, ...) score as an exact match; numeric
