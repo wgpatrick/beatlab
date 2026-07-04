@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SynthParams, type Track } from '../types'
 import { engine } from '../audio/engine'
 import { useStore } from '../state/store'
@@ -52,6 +53,10 @@ export function DevicePanel({ track }: { track: Track }) {
   const lesson = useStore((s) => s.lesson())
   const paramScores = useStore((s) => s.paramScores)
   const allTracks = useStore((s) => s.tracks)
+  const sampleLoaded = useStore((s) => s.sampleLoaded)
+  const loadDrumSample = useStore((s) => s.loadDrumSample)
+  const clearDrumSample = useStore((s) => s.clearDrumSample)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const visibleParams = lesson?.visibleParams
   const visible = (key: keyof SynthParams) => !visibleParams || visibleParams.includes(key)
@@ -68,6 +73,35 @@ export function DevicePanel({ track }: { track: Track }) {
                 {DRUM_LABELS[lane]}
               </button>
             ))}
+          </div>
+        </div>
+        <div className="device-section">
+          <div className="device-section-title">SAMPLE</div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) void loadDrumSample(file)
+              e.target.value = ''
+            }}
+          />
+          <div className="knob-row" style={{ alignItems: 'center', gap: 8 }}>
+            <button className="clear-btn" onClick={() => fileInputRef.current?.click()}>
+              Load Sample
+            </button>
+            {sampleLoaded && (
+              <button className="clear-btn" onClick={clearDrumSample}>
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="device-note" style={{ padding: '8px 0 0' }}>
+            {sampleLoaded
+              ? `Loaded "${sampleLoaded.name}", auto-sliced into 5 equal chunks across the pads above — each pad now plays its slice instead of the synthesized voice.`
+              : 'Load any short audio file to auto-slice it across the 5 pads (equal regions), replacing the synthesized kit lane-for-lane.'}
           </div>
         </div>
         <div className="device-note">

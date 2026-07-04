@@ -68,6 +68,17 @@ interface DrumKit {
   openhat: Tone.MetalSynth
 }
 
+// Phase I: sampling lives on the existing 'drums' track/lane model rather than a new track kind
+// or asset library — see docs/ROADMAP.md Phase I for the scoping note (avoids both bundling
+// third-party audio into the repo and the much bigger lift of a fully separate sampler track
+// type). Loading a file auto-slices it into 5 equal ("Region" mode) chunks, one per existing
+// drum lane; each lane's step-sequencer trigger plays its slice via Tone.Player instead of the
+// synthesized voice, with zero changes to the step sequencer / pattern data model itself.
+interface SampleSlice {
+  start: number
+  dur: number
+}
+
 class Engine {
   private chains = new Map<string, SynthChain>()
   private drums: DrumKit | null = null
@@ -80,6 +91,11 @@ class Engine {
   // Phase E: a second shared return bus, chorus -> phaser in series, one combined send level
   private chorusBus: Tone.Chorus | null = null
   private phaserBus: Tone.Phaser | null = null
+  // Phase I: loaded sample (if any) that replaces the synthesized drum kit lane-for-lane.
+  private sampleBuffer: Tone.ToneAudioBuffer | null = null
+  private samplePlayers: Partial<Record<DrumLane, Tone.Player>> = {}
+  private sampleGains: Partial<Record<DrumLane, Tone.Gain>> = {}
+  private sampleSlices: Partial<Record<DrumLane, SampleSlice>> = {}
 
   async ensureStarted() {
     if (this.ready) return
@@ -149,7 +165,58 @@ class Engine {
     this.drums = { kick, snare, clap, hat, openhat }
   }
 
+  // ---------- Phase I: sampling (loads onto the existing 5 drum lanes) ----------
+
+  /** Core, testable slicing logic — takes an already-decoded AudioBuffer so it can be exercised
+   * with any valid buffer (including a synthetically rendered one in tests/dev tools), without
+   * needing a real file or file picker. loadDrumSampleFromFile below is the thin file-reading
+   * wrapper around this. */
+  loadDrumSampleFromBuffer(buffer: AudioBuffer, name: string) {
+    this.clearDrumSample()
+    this.sampleBuffer = new Tone.ToneAudioBuffer(buffer)
+    const sliceLen = buffer.duration / DRUM_LANES.length
+    for (let i = 0; i < DRUM_LANES.length; i++) {
+      const lane = DRUM_LANES[i]
+      const gain = new Tone.Gain(1).toDestination()
+      const player = new Tone.Player(this.sampleBuffer).connect(gain)
+      this.samplePlayers[lane] = player
+      this.sampleGains[lane] = gain
+      this.sampleSlices[lane] = { start: i * sliceLen, dur: sliceLen }
+    }
+    useStore.setState({ sampleLoaded: { name } })
+  }
+
+  async loadDrumSampleFromFile(file: File) {
+    await this.ensureStarted()
+    const arrayBuf = await file.arrayBuffer()
+    const audioBuf = await Tone.getContext().rawContext.decodeAudioData(arrayBuf)
+    this.loadDrumSampleFromBuffer(audioBuf, file.name)
+  }
+
+  clearDrumSample() {
+    for (const lane of DRUM_LANES) {
+      this.samplePlayers[lane]?.dispose()
+      this.sampleGains[lane]?.dispose()
+      delete this.samplePlayers[lane]
+      delete this.sampleGains[lane]
+      delete this.sampleSlices[lane]
+    }
+    this.sampleBuffer?.dispose()
+    this.sampleBuffer = null
+    useStore.setState({ sampleLoaded: null })
+  }
+
   triggerDrum(lane: DrumLane, time?: number, velocity = 1) {
+    const slice = this.sampleSlices[lane]
+    const player = this.samplePlayers[lane]
+    if (slice && player) {
+      // Approximate per-hit velocity via the slice's own gain node rather than a real per-voice
+      // envelope — Tone.Player has no built-in velocity concept, and re-creating one for a single
+      // shared player per lane isn't worth it for a step-resolution teaching engine.
+      this.sampleGains[lane]!.gain.value = velocity
+      player.start(time, slice.start, slice.dur)
+      return
+    }
     if (!this.drums) return
     switch (lane) {
       case 'kick':
@@ -699,3 +766,7 @@ class Engine {
 }
 
 export const engine = new Engine()
+
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __engine: typeof engine }).__engine = engine
+}

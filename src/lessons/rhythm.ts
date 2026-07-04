@@ -143,6 +143,27 @@ const drumLessons: Lesson[] = [
       return pass('That grooves. You just did what a drummer calls "playing the kit, not the pattern".')
     },
   },
+  {
+    id: 'sampling-load-and-chop',
+    module: DRUMS,
+    title: 'Sampling: Load & Chop',
+    summary:
+      'Sampling means using a real recorded sound instead of a synthesized one. Load any short audio file — a drum loop, a vocal snippet, anything a couple seconds long — and it auto-slices into 5 equal chunks, one per pad, replacing the synthesized kick/snare/hat/clap/openhat lane-for-lane. Program a pattern with those pads exactly like you would with the synthesized kit; the step sequencer doesn\'t know or care where the sound came from.',
+    task: 'In the SAMPLE section of the device panel, load any short audio file you have, then program at least 6 hits across the pads using your loaded sample.',
+    hints: [
+      'Any short audio file works — this app doesn\'t ship one for you, on purpose (no license to hand out someone else\'s recording). A phone voice memo, a drum loop, even a music file all work.',
+      'This is exactly Ableton Simpler\'s "Region" slice mode — divide into N equal parts — one of its four slicing modes (the others: Transient, Beat, Manual).',
+      'Compare it against the synthesized kit by clicking Clear — same pattern, completely different sound source.',
+    ],
+    setup: () => ({ tracks: [drumTrack()], loopBars: 1, bpm: 120, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      if (!ctx.sampleLoaded) return fail('No sample loaded yet — use Load Sample in the device panel\'s SAMPLE section.')
+      const t = track(ctx, 'drums')
+      const total = DRUM_LANES.reduce((acc, l) => acc + laneSteps(t, l).length, 0)
+      if (total < 6) return fail(`Program at least 6 hits using your loaded sample\'s pads (you have ${total}).`)
+      return pass(`Loaded "${ctx.sampleLoaded.name}", sliced across 5 pads, sequenced exactly like the synthesized kit — that\'s the core sampling workflow every drum-sampler plugin builds on.`)
+    },
+  },
 ]
 
 // ================= MODULE 7: RHYTHM STYLES =================

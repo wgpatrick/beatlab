@@ -275,6 +275,9 @@ export interface ValidateCtx {
   tracks: Track[]
   arrangement: ArrangementState
   params: LessonParams
+  /** Phase I: global engine/UI state (not per-track content), passed through so a lesson can
+   * check whether the student has loaded a sample — see the sampling lesson in rhythm.ts. */
+  sampleLoaded?: { name: string } | null
 }
 
 export interface DrumHit {

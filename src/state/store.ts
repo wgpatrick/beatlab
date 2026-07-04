@@ -85,6 +85,9 @@ export interface AppState {
    * and isRecording+isPlaying are both true, Engine.tick() samples that param's current value
    * once per step into its automation lane — the same REC button Phase G uses for MIDI notes. */
   automationArm: { trackId: string; param: AutomatableParam } | null
+  /** Phase I: a loaded sample (if any) replacing the synthesized drum kit lane-for-lane, set
+   * directly by Engine (mirrors how it already sets currentStep). */
+  sampleLoaded: { name: string } | null
 
   lesson: () => Lesson | undefined
   selectTrack: (id: string) => void
@@ -125,6 +128,8 @@ export interface AppState {
   recordAutomationPoint: (trackId: string, param: AutomatableParam, time: number, value: number) => void
   setAutomationArm: (arm: { trackId: string; param: AutomatableParam } | null) => void
   setMacroValue: (trackId: string, value: number) => void
+  loadDrumSample: (file: File) => Promise<void>
+  clearDrumSample: () => void
   setScaleLock: (lock: { root: number; scale: string } | null) => void
   connectMidi: () => Promise<void>
   toggleRecording: () => void
@@ -166,6 +171,7 @@ export const useStore = create<AppState>()((set, get) => ({
   isRecording: false,
   quantizeStrength: 0,
   automationArm: null,
+  sampleLoaded: null,
 
   lesson: () => (get().mode === 'lesson' ? findLesson(get().currentLessonId) : undefined),
 
@@ -348,7 +354,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const state = get()
     const lesson = findLesson(state.currentLessonId)
     if (!lesson) return
-    const result = lesson.validate({ tracks: state.tracks, arrangement: state.arrangement, params: state.lessonParams })
+    const result = lesson.validate({ tracks: state.tracks, arrangement: state.arrangement, params: state.lessonParams, sampleLoaded: state.sampleLoaded })
     let completed = state.completed
     if (result.pass && !completed.includes(lesson.id)) {
       completed = [...completed, lesson.id]
@@ -602,6 +608,14 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   setScaleLock: (lock) => set({ scaleLock: lock }),
+
+  // ---------- Phase I: sampling ----------
+
+  loadDrumSample: async (file) => {
+    await engine.loadDrumSampleFromFile(file)
+  },
+
+  clearDrumSample: () => engine.clearDrumSample(),
 
   // ---------- MIDI input (Phase G) ----------
 
