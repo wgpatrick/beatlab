@@ -50,6 +50,11 @@ interface CreateDrag {
   moved: boolean
 }
 
+interface BoxSelectDrag {
+  startX: number
+  startY: number
+}
+
 export function PianoRoll({ track }: { track: Track }) {
   const loopBars = useStore((s) => s.loopBars)
   const currentStep = useStore((s) => s.currentStep)
@@ -78,9 +83,12 @@ export function PianoRoll({ track }: { track: Track }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<NoteDrag | null>(null)
   const createRef = useRef<CreateDrag | null>(null)
+  const boxSelectRef = useRef<BoxSelectDrag | null>(null)
   const wheelSessionRef = useRef<number | null>(null)
   const [creating, setCreating] = useState<{ pitch: number; start: number; duration: number } | null>(null)
   const [velocityPreview, setVelocityPreview] = useState<{ noteId: string; velocity: number } | null>(null)
+  const [selectionBox, setSelectionBox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
 
   const steps = loopBars * 16
   const rows = MAX_PITCH - MIN_PITCH + 1
@@ -96,10 +104,76 @@ export function PianoRoll({ track }: { track: Track }) {
     el.scrollLeft = 0
   }, [currentLessonId, mode, track.id])
 
+  // a stale selection from a different track (or a different lesson's fresh notes) doesn't mean
+  // anything once the track underneath it changes
+  useEffect(() => {
+    setSelectedNoteIds(new Set())
+  }, [track.id, currentLessonId, mode])
+
+  // Arrow keys nudge every selected note by one step/semitone (clamped as a group, so relative
+  // spacing survives hitting an edge); Delete/Backspace removes the whole selection. Global
+  // listener scoped to whichever PianoRoll is currently mounted, same pattern as App.tsx's
+  // space/undo shortcuts.
+  useEffect(() => {
+    if (selectedNoteIds.size === 0) return
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
+      const selected = track.notes.filter((n) => selectedNoteIds.has(n.id))
+      if (!selected.length) return
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        pushHistory()
+        for (const n of selected) removeNote(track.id, n.id)
+        setSelectedNoteIds(new Set())
+        return
+      }
+
+      let dStart = 0
+      let dPitch = 0
+      if (e.key === 'ArrowLeft') dStart = -1
+      else if (e.key === 'ArrowRight') dStart = 1
+      else if (e.key === 'ArrowUp') dPitch = 1
+      else if (e.key === 'ArrowDown') dPitch = -1
+      else return
+      e.preventDefault()
+
+      if (dStart !== 0) {
+        const minStart = Math.min(...selected.map((n) => n.start))
+        const maxEnd = Math.max(...selected.map((n) => n.start + n.duration))
+        if (minStart + dStart < 0) dStart = -minStart
+        if (maxEnd + dStart > steps) dStart = steps - maxEnd
+        if (dStart === 0) return
+      }
+      if (dPitch !== 0) {
+        const minPitch = Math.min(...selected.map((n) => n.pitch))
+        const maxPitch = Math.max(...selected.map((n) => n.pitch))
+        if (minPitch + dPitch < MIN_PITCH) dPitch = MIN_PITCH - minPitch
+        if (maxPitch + dPitch > MAX_PITCH) dPitch = MAX_PITCH - maxPitch
+        if (dPitch === 0) return
+      }
+
+      pushHistory()
+      for (const n of selected) {
+        updateNote(track.id, n.id, { start: n.start + dStart, pitch: n.pitch + dPitch })
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedNoteIds, track.notes, track.id, steps, pushHistory, updateNote, removeNote])
+
   const onGridPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
+    if (e.shiftKey) {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      boxSelectRef.current = { startX: x, startY: y }
+      setSelectionBox({ x1: x, y1: y, x2: x, y2: y })
+      return
+    }
+    setSelectedNoteIds(new Set()) // starting a new note replaces any existing selection
     const col = Math.floor(x / CELL)
     const pitch = MAX_PITCH - Math.floor(y / ROW)
     if (col < 0 || col >= steps || pitch < MIN_PITCH || pitch > MAX_PITCH) return
@@ -108,6 +182,16 @@ export function PianoRoll({ track }: { track: Track }) {
   }
 
   const onGridPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (boxSelectRef.current) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      setSelectionBox({
+        x1: boxSelectRef.current.startX,
+        y1: boxSelectRef.current.startY,
+        x2: e.clientX - rect.left,
+        y2: e.clientY - rect.top,
+      })
+      return
+    }
     const d = createRef.current
     if (!d) return
     if (!d.moved) {
@@ -120,6 +204,30 @@ export function PianoRoll({ track }: { track: Track }) {
   }
 
   const onGridPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (boxSelectRef.current) {
+      const box = selectionBox
+      boxSelectRef.current = null
+      setSelectionBox(null)
+      if (box) {
+        const bx1 = Math.min(box.x1, box.x2)
+        const bx2 = Math.max(box.x1, box.x2)
+        const by1 = Math.min(box.y1, box.y2)
+        const by2 = Math.max(box.y1, box.y2)
+        const ids = new Set(
+          track.notes
+            .filter((n) => {
+              const nx1 = n.start * CELL
+              const nx2 = nx1 + n.duration * CELL
+              const ny1 = (MAX_PITCH - n.pitch) * ROW
+              const ny2 = ny1 + ROW
+              return nx1 < bx2 && nx2 > bx1 && ny1 < by2 && ny2 > by1
+            })
+            .map((n) => n.id),
+        )
+        setSelectedNoteIds(ids)
+      }
+      return
+    }
     const d = createRef.current
     createRef.current = null
     if (!d) return
@@ -218,12 +326,22 @@ export function PianoRoll({ track }: { track: Track }) {
             <button
               key={l.v}
               className={noteLength === l.v ? 'on' : ''}
-              onClick={() => setNoteLength(l.v)}
+              title={selectedNoteIds.size ? `Set the ${selectedNoteIds.size} selected note(s) to this length` : 'Length for new notes'}
+              onClick={() => {
+                setNoteLength(l.v)
+                if (selectedNoteIds.size) {
+                  pushHistory()
+                  for (const id of selectedNoteIds) updateNote(track.id, id, { duration: l.v })
+                }
+              }}
             >
               {l.label}
             </button>
           ))}
         </div>
+        {selectedNoteIds.size > 0 && (
+          <span className="toolbar-label selection-count">{selectedNoteIds.size} selected</span>
+        )}
         <span className="toolbar-label">Velocity {Math.round(noteVelocity * 100)}%</span>
         <input
           className="velocity-slider"
@@ -234,7 +352,7 @@ export function PianoRoll({ track }: { track: Track }) {
           value={noteVelocity}
           onChange={(e) => setNoteVelocity(Number(e.target.value))}
         />
-        <span className="toolbar-tip">click: add note · drag: draw length · drag note: move · drag edge: resize · alt+drag note: velocity · scroll note: quick velocity · click note: delete</span>
+        <span className="toolbar-tip">click: add note · drag: draw length · shift+drag: box-select · arrows: move selection · delete: remove selection · drag note: move · drag edge: resize · alt+drag note: velocity · scroll note: quick velocity · click note: delete</span>
         <div className="spacer" />
         <button className={`seg-toggle ${scaleLock ? 'on' : ''}`} onClick={() => setScaleLock(scaleLock ? null : { root: 9, scale: 'Minor' })}>
           Scale Lock
@@ -326,7 +444,7 @@ export function PianoRoll({ track }: { track: Track }) {
             {track.notes.map((n) => (
               <div
                 key={n.id}
-                className="note"
+                className={`note ${selectedNoteIds.has(n.id) ? 'selected' : ''}`}
                 title={`${noteName(n.pitch)} · velocity ${n.velocity.toFixed(2)} · drag to move, drag right edge to resize, alt+drag to change velocity, scroll for quick velocity, click to delete`}
                 style={{
                   left: n.start * CELL,
@@ -368,6 +486,17 @@ export function PianoRoll({ track }: { track: Track }) {
             )}
             {currentStep >= 0 && (
               <div className="playhead" style={{ left: currentStep * CELL }} />
+            )}
+            {selectionBox && (
+              <div
+                className="selection-box"
+                style={{
+                  left: Math.min(selectionBox.x1, selectionBox.x2),
+                  top: Math.min(selectionBox.y1, selectionBox.y2),
+                  width: Math.abs(selectionBox.x2 - selectionBox.x1),
+                  height: Math.abs(selectionBox.y2 - selectionBox.y1),
+                }}
+              />
             )}
           </div>
         </div>
