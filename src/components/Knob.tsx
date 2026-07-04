@@ -11,6 +11,8 @@ interface KnobProps {
   format?: (v: number) => string
   /** Ear-training feedback: colors the knob's arc/value to show how close this parameter is to a target. */
   status?: ParamStatus
+  /** Hover tooltip explaining what this parameter does. */
+  hint?: string
 }
 
 const STATUS_COLOR: Record<ParamStatus, string> = {
@@ -44,7 +46,7 @@ function arcPath(cx: number, cy: number, r: number, fromDeg: number, toDeg: numb
   return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`
 }
 
-export function Knob({ label, value, min, max, log = false, onChange, format, status }: KnobProps) {
+export function Knob({ label, value, min, max, log = false, onChange, format, status, hint }: KnobProps) {
   const drag = useRef<{ startY: number; startNorm: number } | null>(null)
 
   const norm = Math.min(1, Math.max(0, toNorm(value, min, max, log)))
@@ -78,7 +80,7 @@ export function Knob({ label, value, min, max, log = false, onChange, format, st
   const statusColor = status ? STATUS_COLOR[status] : undefined
 
   return (
-    <div className={`knob ${status ? `knob-${status}` : ''}`}>
+    <div className={`knob ${status ? `knob-${status}` : ''}`} title={hint}>
       <svg
         width="40"
         height="40"

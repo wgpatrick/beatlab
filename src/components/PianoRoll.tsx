@@ -11,6 +11,7 @@ const MIN_PITCH = 33 // A1
 const KEYS_W = 52
 const DRAG_THRESHOLD = 4 // px of movement before a click becomes a drag, not a delete
 const RESIZE_ZONE = 7 // px from the right edge that grabs the resize handle instead of moving
+const VELOCITY_DRAG_RANGE = 120 // px of vertical drag to sweep the full 0.1..1 velocity range
 
 const BLACK = new Set([1, 3, 6, 8, 10])
 
@@ -32,12 +33,13 @@ const ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 interface NoteDrag {
   noteId: string
-  mode: 'move' | 'resize'
+  mode: 'move' | 'resize' | 'velocity'
   startX: number
   startY: number
   origStart: number
   origPitch: number
   origDuration: number
+  origVelocity: number
   moved: boolean
 }
 
@@ -76,7 +78,9 @@ export function PianoRoll({ track }: { track: Track }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<NoteDrag | null>(null)
   const createRef = useRef<CreateDrag | null>(null)
+  const wheelSessionRef = useRef<number | null>(null)
   const [creating, setCreating] = useState<{ pitch: number; start: number; duration: number } | null>(null)
+  const [velocityPreview, setVelocityPreview] = useState<{ noteId: string; velocity: number } | null>(null)
 
   const steps = loopBars * 16
   const rows = MAX_PITCH - MIN_PITCH + 1
@@ -136,7 +140,11 @@ export function PianoRoll({ track }: { track: Track }) {
     const el = e.currentTarget
     el.setPointerCapture(e.pointerId)
     const rect = el.getBoundingClientRect()
-    const mode: 'move' | 'resize' = rect.right - e.clientX <= RESIZE_ZONE ? 'resize' : 'move'
+    const mode: 'move' | 'resize' | 'velocity' = e.altKey
+      ? 'velocity'
+      : rect.right - e.clientX <= RESIZE_ZONE
+        ? 'resize'
+        : 'move'
     dragRef.current = {
       noteId: note.id,
       mode,
@@ -145,6 +153,7 @@ export function PianoRoll({ track }: { track: Track }) {
       origStart: note.start,
       origPitch: note.pitch,
       origDuration: note.duration,
+      origVelocity: note.velocity,
       moved: false,
     }
   }
@@ -162,6 +171,11 @@ export function PianoRoll({ track }: { track: Track }) {
     if (d.mode === 'resize') {
       const duration = Math.max(1, d.origDuration + Math.round(dx / CELL))
       updateNote(track.id, d.noteId, { duration })
+    } else if (d.mode === 'velocity') {
+      // Up = louder, down = softer — dy is negative when the pointer moves up.
+      const velocity = Math.min(1, Math.max(0.1, d.origVelocity - dy / VELOCITY_DRAG_RANGE))
+      updateNote(track.id, d.noteId, { velocity })
+      setVelocityPreview({ noteId: d.noteId, velocity })
     } else {
       const start = Math.min(steps - 1, Math.max(0, d.origStart + Math.round(dx / CELL)))
       const pitch = Math.min(MAX_PITCH, Math.max(MIN_PITCH, d.origPitch - Math.round(dy / ROW)))
@@ -172,13 +186,22 @@ export function PianoRoll({ track }: { track: Track }) {
   const onNotePointerUp = (note: Track['notes'][number]) => {
     const d = dragRef.current
     dragRef.current = null
-    if (d && !d.moved) removeNote(track.id, note.id) // plain click, no drag — same as before
+    setVelocityPreview(null)
+    // Plain click (no drag) deletes — except an Alt+click held for velocity that never actually
+    // moved, which would otherwise delete a note the user was just trying to nudge.
+    if (d && !d.moved && d.mode !== 'velocity') removeNote(track.id, note.id)
   }
 
   const onNoteWheel = (e: React.WheelEvent<HTMLDivElement>, note: Track['notes'][number]) => {
     e.preventDefault()
     e.stopPropagation()
-    pushHistory()
+    // Group a burst of wheel ticks (scrolling to dial in a value) into one undo step instead of
+    // one per tick, same "one step per gesture" rule as dragging — a pause of 600ms+ starts a new one.
+    if (wheelSessionRef.current === null) pushHistory()
+    else window.clearTimeout(wheelSessionRef.current)
+    wheelSessionRef.current = window.setTimeout(() => {
+      wheelSessionRef.current = null
+    }, 600)
     const velocity = Math.min(1, Math.max(0.1, note.velocity + (e.deltaY < 0 ? 0.05 : -0.05)))
     updateNote(track.id, note.id, { velocity })
   }
@@ -211,7 +234,7 @@ export function PianoRoll({ track }: { track: Track }) {
           value={noteVelocity}
           onChange={(e) => setNoteVelocity(Number(e.target.value))}
         />
-        <span className="toolbar-tip">click: add note · drag: draw length · drag note: move · drag edge: resize · click note: delete · scroll note: velocity</span>
+        <span className="toolbar-tip">click: add note · drag: draw length · drag note: move · drag edge: resize · alt+drag note: velocity · scroll note: quick velocity · click note: delete</span>
         <div className="spacer" />
         <button className={`seg-toggle ${scaleLock ? 'on' : ''}`} onClick={() => setScaleLock(scaleLock ? null : { root: 9, scale: 'Minor' })}>
           Scale Lock
@@ -304,7 +327,7 @@ export function PianoRoll({ track }: { track: Track }) {
               <div
                 key={n.id}
                 className="note"
-                title={`${noteName(n.pitch)} · velocity ${n.velocity.toFixed(2)} · drag to move, drag right edge to resize, scroll to change velocity, click to delete`}
+                title={`${noteName(n.pitch)} · velocity ${n.velocity.toFixed(2)} · drag to move, drag right edge to resize, alt+drag to change velocity, scroll for quick velocity, click to delete`}
                 style={{
                   left: n.start * CELL,
                   top: (MAX_PITCH - n.pitch) * ROW,
@@ -322,6 +345,15 @@ export function PianoRoll({ track }: { track: Track }) {
                 {NOTE_NAMES[n.pitch % 12]}
               </div>
             ))}
+            {velocityPreview && (() => {
+              const n = track.notes.find((x) => x.id === velocityPreview.noteId)
+              if (!n) return null
+              return (
+                <div className="velocity-readout" style={{ left: n.start * CELL, top: (MAX_PITCH - n.pitch) * ROW - 18 }}>
+                  {Math.round(velocityPreview.velocity * 100)}%
+                </div>
+              )
+            })()}
             {creating && (
               <div
                 className="note note-creating"

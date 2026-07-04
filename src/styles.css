@@ -40,10 +40,28 @@ button {
   display: grid;
   height: 100vh;
   grid-template-rows: 44px 1fr;
-  grid-template-columns: 225px 1fr 300px;
+  grid-template-columns: 225px 1fr 6px 300px;
   grid-template-areas:
-    'header header header'
-    'sidebar main lesson';
+    'header header header header'
+    'sidebar main divider lesson';
+}
+
+.resize-handle-x {
+  grid-area: divider;
+  cursor: ew-resize;
+  background: var(--border);
+}
+.resize-handle-x:hover {
+  background: var(--accent);
+}
+.resize-handle-y {
+  height: 6px;
+  cursor: ns-resize;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.resize-handle-y:hover {
+  background: var(--accent);
 }
 
 /* ---------- transport ---------- */
@@ -572,6 +590,19 @@ button {
 .note:hover {
   filter: brightness(1.25);
 }
+.velocity-readout {
+  position: absolute;
+  background: #101010;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 2px;
+  z-index: 3;
+  pointer-events: none;
+  white-space: nowrap;
+}
 .note-creating {
   pointer-events: none;
   opacity: 0.55;
@@ -931,11 +962,33 @@ button.seq-label:hover {
   display: flex;
   flex-direction: column;
 }
+.device-section.collapsed {
+  padding-bottom: 8px;
+  width: max-content;
+}
+.device-section.collapsed .device-section-title {
+  white-space: nowrap;
+  margin-bottom: 0;
+}
 .device-section-title {
   font-size: 9px;
   letter-spacing: 2px;
   color: var(--dim);
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+}
+.device-section-title:hover {
+  color: var(--text);
+}
+.collapse-caret {
+  font-size: 8px;
+  width: 8px;
+  flex-shrink: 0;
 }
 
 .knob-row {
