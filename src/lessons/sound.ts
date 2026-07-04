@@ -941,6 +941,7 @@ const transcribeLessons: Lesson[] = [
     ],
     drill: true,
     centerPitch: 38,
+    scalePcs: [],
     visibleParams: [],
     target: (p) => ({ params: TRANSCRIBE_BASS_PATCH, phrase: notesToPhraseSeconds(p.notes as Note[], TRANSCRIBE_BASS_BPM) }),
     setup: () => ({
@@ -972,6 +973,7 @@ const transcribeLessons: Lesson[] = [
     ],
     drill: true,
     centerPitch: 64,
+    scalePcs: [],
     visibleParams: [],
     target: (p) => ({ params: TRANSCRIBE_LEAD_PATCH, phrase: notesToPhraseSeconds(p.notes as Note[], TRANSCRIBE_LEAD_BPM) }),
     setup: () => ({
@@ -1003,6 +1005,7 @@ const transcribeLessons: Lesson[] = [
     ],
     drill: true,
     centerPitch: 60,
+    scalePcs: [],
     visibleParams: [],
     target: (p) => ({ params: TRANSCRIBE_PAD_PATCH, phrase: notesToPhraseSeconds(p.notes as Note[], TRANSCRIBE_PAD_BPM) }),
     setup: () => ({
@@ -1030,6 +1033,7 @@ const transcribeLessons: Lesson[] = [
     ],
     drill: true,
     centerPitch: 55,
+    scalePcs: [],
     visibleParams: P_FULL,
     target: (p) => ({ params: p.patch as SynthParams, phrase: notesToPhraseSeconds(p.notes as Note[], p.bpm as number) }),
     setup: () => {
