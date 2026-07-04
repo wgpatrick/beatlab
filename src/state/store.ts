@@ -74,9 +74,9 @@ export interface AppState {
 
   lesson: () => Lesson | undefined
   selectTrack: (id: string) => void
-  addNote: (trackId: string, pitch: number, start: number) => void
+  addNote: (trackId: string, pitch: number, start: number, duration?: number) => void
   removeNote: (trackId: string, noteId: string) => void
-  updateNote: (trackId: string, noteId: string, patch: Partial<Pick<Note, 'start' | 'pitch' | 'duration'>>) => void
+  updateNote: (trackId: string, noteId: string, patch: Partial<Pick<Note, 'start' | 'pitch' | 'duration' | 'velocity'>>) => void
   clearTrack: (trackId: string) => void
   toggleDrum: (trackId: string, lane: DrumLane, step: number) => void
   setSynth: (trackId: string, patch: Partial<SynthParams>) => void
@@ -146,17 +146,18 @@ export const useStore = create<AppState>()((set, get) => ({
 
   selectTrack: (id) => set({ selectedTrackId: id }),
 
-  addNote: (trackId, pitch, start) => {
+  addNote: (trackId, pitch, start, duration) => {
     const { noteLength, noteVelocity, tracks } = get()
+    const dur = duration ?? noteLength
     const track = tracks.find((t) => t.id === trackId)
     if (!track) return
     // don't add overlapping same-pitch notes
     const collides = track.notes.some(
-      (x) => x.pitch === pitch && start < x.start + x.duration && start + noteLength > x.start,
+      (x) => x.pitch === pitch && start < x.start + x.duration && start + dur > x.start,
     )
     if (collides) return
     get().pushHistory()
-    const note: Note = { id: `u${noteCounter++}`, pitch, start, duration: noteLength, velocity: noteVelocity }
+    const note: Note = { id: `u${noteCounter++}`, pitch, start, duration: dur, velocity: noteVelocity }
     set({
       tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, notes: [...t.notes, note] } : t)),
     })

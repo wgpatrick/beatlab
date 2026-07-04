@@ -408,6 +408,11 @@ button {
   font-weight: 700;
 }
 
+.velocity-slider {
+  width: 80px;
+  accent-color: var(--accent);
+}
+
 .editor-toolbar select {
   background: var(--panel3);
   color: var(--text);
@@ -515,6 +520,12 @@ button {
 }
 .note:hover {
   filter: brightness(1.25);
+}
+.note-creating {
+  pointer-events: none;
+  opacity: 0.55;
+  border: 1px dashed rgba(255, 255, 255, 0.8);
+  z-index: 3;
 }
 
 .playhead {

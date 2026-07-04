@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NOTE_NAMES, noteName, type Track } from '../types'
 import { findLesson } from '../lessons/curriculum'
 import { engine } from '../audio/engine'
@@ -22,12 +22,6 @@ const LENGTHS = [
   { label: '1 bar', v: 16 },
 ]
 
-const VELOCITIES = [
-  { label: 'Soft', v: 0.5 },
-  { label: 'Med', v: 0.8 },
-  { label: 'Hard', v: 1 },
-]
-
 const SCALES: Record<string, number[]> = {
   Major: [0, 2, 4, 5, 7, 9, 11],
   Minor: [0, 2, 3, 5, 7, 8, 10],
@@ -44,6 +38,13 @@ interface NoteDrag {
   origStart: number
   origPitch: number
   origDuration: number
+  moved: boolean
+}
+
+interface CreateDrag {
+  pitch: number
+  startCol: number
+  startX: number
   moved: boolean
 }
 
@@ -74,6 +75,8 @@ export function PianoRoll({ track }: { track: Track }) {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<NoteDrag | null>(null)
+  const createRef = useRef<CreateDrag | null>(null)
+  const [creating, setCreating] = useState<{ pitch: number; start: number; duration: number } | null>(null)
 
   const steps = loopBars * 16
   const rows = MAX_PITCH - MIN_PITCH + 1
@@ -96,7 +99,36 @@ export function PianoRoll({ track }: { track: Track }) {
     const col = Math.floor(x / CELL)
     const pitch = MAX_PITCH - Math.floor(y / ROW)
     if (col < 0 || col >= steps || pitch < MIN_PITCH || pitch > MAX_PITCH) return
-    addNote(track.id, pitch, col)
+    e.currentTarget.setPointerCapture(e.pointerId)
+    createRef.current = { pitch, startCol: col, startX: e.clientX, moved: false }
+  }
+
+  const onGridPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = createRef.current
+    if (!d) return
+    if (!d.moved) {
+      if (Math.abs(e.clientX - d.startX) < DRAG_THRESHOLD) return
+      d.moved = true
+    }
+    const rect = e.currentTarget.getBoundingClientRect()
+    const col = Math.min(steps - 1, Math.max(0, Math.floor((e.clientX - rect.left) / CELL)))
+    setCreating({ pitch: d.pitch, start: Math.min(d.startCol, col), duration: Math.abs(col - d.startCol) + 1 })
+  }
+
+  const onGridPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = createRef.current
+    createRef.current = null
+    if (!d) return
+    if (d.moved) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const col = Math.min(steps - 1, Math.max(0, Math.floor((e.clientX - rect.left) / CELL)))
+      const start = Math.min(d.startCol, col)
+      const duration = Math.abs(col - d.startCol) + 1
+      addNote(track.id, d.pitch, start, duration)
+    } else {
+      addNote(track.id, d.pitch, d.startCol)
+    }
+    setCreating(null)
   }
 
   const onNotePointerDown = (e: React.PointerEvent<HTMLDivElement>, note: Track['notes'][number]) => {
@@ -143,6 +175,14 @@ export function PianoRoll({ track }: { track: Track }) {
     if (d && !d.moved) removeNote(track.id, note.id) // plain click, no drag — same as before
   }
 
+  const onNoteWheel = (e: React.WheelEvent<HTMLDivElement>, note: Track['notes'][number]) => {
+    e.preventDefault()
+    e.stopPropagation()
+    pushHistory()
+    const velocity = Math.min(1, Math.max(0.1, note.velocity + (e.deltaY < 0 ? 0.05 : -0.05)))
+    updateNote(track.id, note.id, { velocity })
+  }
+
   return (
     <div className="pianoroll">
       <div className="editor-toolbar">
@@ -161,19 +201,17 @@ export function PianoRoll({ track }: { track: Track }) {
             </button>
           ))}
         </div>
-        <span className="toolbar-label">Velocity</span>
-        <div className="seg">
-          {VELOCITIES.map((vel) => (
-            <button
-              key={vel.label}
-              className={Math.abs(noteVelocity - vel.v) < 0.05 ? 'on' : ''}
-              onClick={() => setNoteVelocity(vel.v)}
-            >
-              {vel.label}
-            </button>
-          ))}
-        </div>
-        <span className="toolbar-tip">click: add note · drag: move · drag edge: resize · click note: delete</span>
+        <span className="toolbar-label">Velocity {Math.round(noteVelocity * 100)}%</span>
+        <input
+          className="velocity-slider"
+          type="range"
+          min={0.1}
+          max={1}
+          step={0.01}
+          value={noteVelocity}
+          onChange={(e) => setNoteVelocity(Number(e.target.value))}
+        />
+        <span className="toolbar-tip">click: add note · drag: draw length · drag note: move · drag edge: resize · click note: delete · scroll note: velocity</span>
         <div className="spacer" />
         <button className={`seg-toggle ${scaleLock ? 'on' : ''}`} onClick={() => setScaleLock(scaleLock ? null : { root: 9, scale: 'Minor' })}>
           Scale Lock
@@ -240,6 +278,8 @@ export function PianoRoll({ track }: { track: Track }) {
             className="grid"
             style={{ width: gridW, height: gridH, left: KEYS_W }}
             onPointerDown={onGridPointerDown}
+            onPointerMove={onGridPointerMove}
+            onPointerUp={onGridPointerUp}
           >
             {Array.from({ length: rows }, (_, i) => {
               const pitch = MAX_PITCH - i
@@ -264,7 +304,7 @@ export function PianoRoll({ track }: { track: Track }) {
               <div
                 key={n.id}
                 className="note"
-                title={`${noteName(n.pitch)} · velocity ${n.velocity.toFixed(2)} · drag to move, drag right edge to resize, click to delete`}
+                title={`${noteName(n.pitch)} · velocity ${n.velocity.toFixed(2)} · drag to move, drag right edge to resize, scroll to change velocity, click to delete`}
                 style={{
                   left: n.start * CELL,
                   top: (MAX_PITCH - n.pitch) * ROW,
@@ -277,10 +317,23 @@ export function PianoRoll({ track }: { track: Track }) {
                 onPointerDown={(e) => onNotePointerDown(e, n)}
                 onPointerMove={onNotePointerMove}
                 onPointerUp={() => onNotePointerUp(n)}
+                onWheel={(e) => onNoteWheel(e, n)}
               >
-                {n.duration >= 4 ? NOTE_NAMES[n.pitch % 12] : ''}
+                {NOTE_NAMES[n.pitch % 12]}
               </div>
             ))}
+            {creating && (
+              <div
+                className="note note-creating"
+                style={{
+                  left: creating.start * CELL,
+                  top: (MAX_PITCH - creating.pitch) * ROW,
+                  width: creating.duration * CELL - 2,
+                  height: ROW - 2,
+                  background: track.color,
+                }}
+              />
+            )}
             {currentStep >= 0 && (
               <div className="playhead" style={{ left: currentStep * CELL }} />
             )}
