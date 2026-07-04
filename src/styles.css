@@ -1019,6 +1019,40 @@ button.seq-label:hover {
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
+.wave-btns.wave-btns-row {
+  display: flex;
+  gap: 6px;
+}
+.wave-btns.wave-btns-row .wave {
+  white-space: nowrap;
+}
+
+/* Compact side-by-side layout for OSC 2's unison voice buttons and the arpeggiator's on/off +
+   pattern groups — sits inline with a knob-row instead of stacking on its own row, trading
+   section height for width (several sections were overflowing the device panel vertically). */
+.unison-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 48px;
+}
+.unison-btns-label {
+  font-size: 9px;
+  color: var(--dim);
+  margin-bottom: 1px;
+}
+.unison-btns .wave {
+  padding: 3px 6px;
+  justify-content: center;
+}
+.arp-toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.arp-toggle-group .wave-btns-row .wave {
+  padding: 5px 8px;
+}
 .wave {
   display: flex;
   align-items: center;

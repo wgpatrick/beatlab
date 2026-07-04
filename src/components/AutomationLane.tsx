@@ -18,7 +18,7 @@ interface ParamConfig {
 }
 
 const PARAM_CONFIG: Record<AutomatableParam, ParamConfig> = {
-  cutoff: { label: 'Cutoff', min: 40, max: 16000, log: true, format: (v) => `${Math.round(v)}Hz` },
+  cutoff: { label: 'Cutoff', min: 20, max: 20000, log: true, format: (v) => `${Math.round(v)}Hz` },
   resonance: { label: 'Resonance', min: 0.1, max: 20, format: (v) => v.toFixed(1) },
   volume: { label: 'Volume', min: -30, max: 0, format: (v) => `${v.toFixed(0)}dB` },
   pan: { label: 'Pan', min: -1, max: 1, format: (v) => v.toFixed(2) },

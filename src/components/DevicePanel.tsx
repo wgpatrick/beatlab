@@ -178,7 +178,7 @@ export function DevicePanel({ track }: { track: Track }) {
       {showOscBank && (
         <Section title="OSC 2 / SUB / NOISE" hint="Additional oscillator-bank layers summed in with the main oscillator before the filter">
           {visible('osc2Type') && (
-            <div className="wave-btns" style={{ marginBottom: 8 }}>
+            <div className="wave-btns wave-btns-row" style={{ marginBottom: 8 }}>
               {WAVES.map((w) => (
                 <button
                   key={w.type}
@@ -199,7 +199,7 @@ export function DevicePanel({ track }: { track: Track }) {
               <Knob label="Osc2" value={p.osc2Level} min={0} max={1} format={pct} status={statusOf('osc2Level')} onChange={(v) => set({ osc2Level: v })} hint="How loud the second oscillator layer is mixed in — 0 = silent/off" />
             )}
             {visible('osc2Detune') && (
-              <Knob label="Detune" value={p.osc2Detune} min={-50} max={50} format={cents} status={statusOf('osc2Detune')} onChange={(v) => set({ osc2Detune: v })} hint="How far Osc2 (and Osc3, if on) is detuned from the main pitch, in cents — creates width/beating" />
+              <Knob label="Detune" value={p.osc2Detune} min={-100} max={100} format={cents} status={statusOf('osc2Detune')} onChange={(v) => set({ osc2Detune: v })} hint="How far Osc2 (and Osc3, if on) is detuned from the main pitch, in cents — creates width/beating" />
             )}
             {visible('subLevel') && (
               <Knob label="Sub" value={p.subLevel} min={0} max={1} format={pct} status={statusOf('subLevel')} onChange={(v) => set({ subLevel: v })} hint="A fixed sine wave one octave below the main pitch — adds low-end weight" />
@@ -207,21 +207,22 @@ export function DevicePanel({ track }: { track: Track }) {
             {visible('noiseLevel') && (
               <Knob label="Noise" value={p.noiseLevel} min={0} max={1} format={pct} status={statusOf('noiseLevel')} onChange={(v) => set({ noiseLevel: v })} hint="Blends in white noise — adds air, breath, or grit" />
             )}
+            {showUnison && (
+              <div className="unison-btns">
+                <div className="unison-btns-label">Unison</div>
+                {[1, 2, 3].map((v) => (
+                  <button
+                    key={v}
+                    className={`wave ${p.unisonVoices === v ? 'on' : ''} ${p.unisonVoices === v && statusOf('unisonVoices') ? `status-${statusOf('unisonVoices')}` : ''}`}
+                    onClick={() => set({ unisonVoices: v as 1 | 2 | 3 })}
+                    title={v === 1 ? 'Just the main oscillator' : v === 2 ? 'Adds Osc2 at +Detune (the classic "supersaw" 2-voice stack)' : 'Adds a third voice mirrored at -Detune, for a symmetric, wider stack'}
+                  >
+                    {v}V
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          {showUnison && (
-            <div className="wave-btns" style={{ marginTop: 8, gridTemplateColumns: '1fr 1fr 1fr' }}>
-              {[1, 2, 3].map((v) => (
-                <button
-                  key={v}
-                  className={`wave ${p.unisonVoices === v ? 'on' : ''} ${p.unisonVoices === v && statusOf('unisonVoices') ? `status-${statusOf('unisonVoices')}` : ''}`}
-                  onClick={() => set({ unisonVoices: v as 1 | 2 | 3 })}
-                  title={v === 1 ? 'Just the main oscillator' : v === 2 ? 'Adds Osc2 at +Detune (the classic "supersaw" 2-voice stack)' : 'Adds a third voice mirrored at -Detune, for a symmetric, wider stack'}
-                >
-                  {v}V
-                </button>
-              ))}
-            </div>
-          )}
         </Section>
       )}
       {showFm && (
@@ -231,10 +232,10 @@ export function DevicePanel({ track }: { track: Track }) {
               <Knob label="Level" value={p.fmLevel} min={0} max={1} format={pct} status={statusOf('fmLevel')} onChange={(v) => set({ fmLevel: v })} hint="How loud the FM voice is mixed in — 0 = silent/off" />
             )}
             {visible('fmHarmonicity') && (
-              <Knob label="Harm" value={p.fmHarmonicity} min={0.5} max={8} format={(v) => v.toFixed(1)} status={statusOf('fmHarmonicity')} onChange={(v) => set({ fmHarmonicity: v })} hint="Carrier:modulator frequency ratio — whole numbers (1, 2, 3) sound pitched; in-between values sound metallic/clangorous" />
+              <Knob label="Harm" value={p.fmHarmonicity} min={0.25} max={12} format={(v) => v.toFixed(2)} status={statusOf('fmHarmonicity')} onChange={(v) => set({ fmHarmonicity: v })} hint="Carrier:modulator frequency ratio — whole numbers (1, 2, 3) sound pitched; in-between values sound metallic/clangorous" />
             )}
             {visible('fmModIndex') && (
-              <Knob label="Mod Idx" value={p.fmModIndex} min={1} max={20} format={(v) => v.toFixed(0)} status={statusOf('fmModIndex')} onChange={(v) => set({ fmModIndex: v })} hint="Modulation amount — higher values add more (and louder) harmonics" />
+              <Knob label="Mod Idx" value={p.fmModIndex} min={0} max={30} format={(v) => v.toFixed(0)} status={statusOf('fmModIndex')} onChange={(v) => set({ fmModIndex: v })} hint="Modulation amount — higher values add more (and louder) harmonics" />
             )}
           </div>
         </Section>
@@ -257,7 +258,7 @@ export function DevicePanel({ track }: { track: Track }) {
           )}
           <div className="knob-row">
             {visible('cutoff') && (
-              <Knob label="Cutoff" value={p.cutoff} min={40} max={16000} log format={hz} status={statusOf('cutoff')} onChange={(v) => set({ cutoff: v })} hint="The frequency where the filter's rolloff starts" />
+              <Knob label="Cutoff" value={p.cutoff} min={20} max={20000} log format={hz} status={statusOf('cutoff')} onChange={(v) => set({ cutoff: v })} hint="The frequency where the filter's rolloff starts" />
             )}
             {visible('resonance') && (
               <Knob label="Res" value={p.resonance} min={0.1} max={20} format={(v) => v.toFixed(1)} status={statusOf('resonance')} onChange={(v) => set({ resonance: v })} hint="Emphasizes frequencies right at Cutoff — high values start to whistle/self-oscillate" />
@@ -272,16 +273,16 @@ export function DevicePanel({ track }: { track: Track }) {
               <Knob label="Amount" value={p.filterEnvAmount} min={0} max={1} format={pct} status={statusOf('filterEnvAmount')} onChange={(v) => set({ filterEnvAmount: v })} hint="How far the envelope sweeps the cutoff (in octaves) — 0 = no movement, filter stays static" />
             )}
             {visible('filterEnvAttack') && (
-              <Knob label="Attack" value={p.filterEnvAttack} min={0.001} max={2} log format={ms} status={statusOf('filterEnvAttack')} onChange={(v) => set({ filterEnvAttack: v })} hint="Time for the filter sweep to reach its peak after a note starts" />
+              <Knob label="Attack" value={p.filterEnvAttack} min={0.001} max={4} log format={ms} status={statusOf('filterEnvAttack')} onChange={(v) => set({ filterEnvAttack: v })} hint="Time for the filter sweep to reach its peak after a note starts" />
             )}
             {visible('filterEnvDecay') && (
-              <Knob label="Decay" value={p.filterEnvDecay} min={0.01} max={2} log format={ms} status={statusOf('filterEnvDecay')} onChange={(v) => set({ filterEnvDecay: v })} hint="Time for the sweep to fall from its peak to the sustain level" />
+              <Knob label="Decay" value={p.filterEnvDecay} min={0.01} max={4} log format={ms} status={statusOf('filterEnvDecay')} onChange={(v) => set({ filterEnvDecay: v })} hint="Time for the sweep to fall from its peak to the sustain level" />
             )}
             {visible('filterEnvSustain') && (
               <Knob label="Sustain" value={p.filterEnvSustain} min={0} max={1} format={(v) => v.toFixed(2)} status={statusOf('filterEnvSustain')} onChange={(v) => set({ filterEnvSustain: v })} hint="Fraction of the full sweep held while a note is sustained" />
             )}
             {visible('filterEnvRelease') && (
-              <Knob label="Release" value={p.filterEnvRelease} min={0.01} max={4} log format={ms} status={statusOf('filterEnvRelease')} onChange={(v) => set({ filterEnvRelease: v })} hint="Time for the filter to settle back after a note ends" />
+              <Knob label="Release" value={p.filterEnvRelease} min={0.01} max={8} log format={ms} status={statusOf('filterEnvRelease')} onChange={(v) => set({ filterEnvRelease: v })} hint="Time for the filter to settle back after a note ends" />
             )}
             {visible('keytrackAmount') && (
               <Knob label="Keytrack" value={p.keytrackAmount} min={0} max={1} format={pct} status={statusOf('keytrackAmount')} onChange={(v) => set({ keytrackAmount: v })} hint="Higher notes automatically brighten the filter — mimics how real instruments behave" />
@@ -296,52 +297,58 @@ export function DevicePanel({ track }: { track: Track }) {
         <Section title="ENVELOPE" hint="The amplitude (volume) envelope — how loud a note is at each moment from key-down to silence">
           <div className="knob-row">
             {visible('attack') && (
-              <Knob label="Attack" value={p.attack} min={0.001} max={2} log format={ms} status={statusOf('attack')} onChange={(v) => set({ attack: v })} hint="Time to reach full volume after a note starts" />
+              <Knob label="Attack" value={p.attack} min={0.001} max={8} log format={ms} status={statusOf('attack')} onChange={(v) => set({ attack: v })} hint="Time to reach full volume after a note starts" />
             )}
             {visible('decay') && (
-              <Knob label="Decay" value={p.decay} min={0.01} max={2} log format={ms} status={statusOf('decay')} onChange={(v) => set({ decay: v })} hint="Time to fall from peak volume down to the sustain level" />
+              <Knob label="Decay" value={p.decay} min={0.01} max={8} log format={ms} status={statusOf('decay')} onChange={(v) => set({ decay: v })} hint="Time to fall from peak volume down to the sustain level" />
             )}
             {visible('sustain') && (
               <Knob label="Sustain" value={p.sustain} min={0} max={1} format={(v) => v.toFixed(2)} status={statusOf('sustain')} onChange={(v) => set({ sustain: v })} hint="Volume level held for as long as the note is held" />
             )}
             {visible('release') && (
-              <Knob label="Release" value={p.release} min={0.01} max={4} log format={ms} status={statusOf('release')} onChange={(v) => set({ release: v })} hint="Time to fade to silence after the note ends" />
+              <Knob label="Release" value={p.release} min={0.01} max={15} log format={ms} status={statusOf('release')} onChange={(v) => set({ release: v })} hint="Time to fade to silence after the note ends" />
             )}
             {showGlide && (
-              <Knob label="Glide" value={Math.max(p.glide, 0.001)} min={0.001} max={1} log format={ms} status={statusOf('glide')} onChange={(v) => set({ glide: v < 0.0015 ? 0 : v })} hint="Portamento — time to slide in pitch between consecutive notes instead of jumping instantly. Near-0 = off" />
+              <Knob label="Glide" value={Math.max(p.glide, 0.001)} min={0.001} max={3} log format={ms} status={statusOf('glide')} onChange={(v) => set({ glide: v < 0.0015 ? 0 : v })} hint="Portamento — time to slide in pitch between consecutive notes instead of jumping instantly. Near-0 = off" />
             )}
           </div>
         </Section>
       )}
       {showArp && (
         <Section title="ARPEGGIATOR" hint="Fans notes stacked at the same grid position out into a fast sequence instead of playing them as a block chord">
-          {visible('arpOn') && (
-            <div className="wave-btns" style={{ marginBottom: 8, gridTemplateColumns: '1fr 1fr' }}>
-              <button className={`wave ${!p.arpOn ? 'on' : ''}`} onClick={() => set({ arpOn: false })} title="Play stacked notes together as a chord">
-                Off
-              </button>
-              <button className={`wave ${p.arpOn ? 'on' : ''}`} onClick={() => set({ arpOn: true })} title="Fan stacked notes out into a sequence">
-                On
-              </button>
-            </div>
-          )}
-          {visible('arpPattern') && (
-            <div className="wave-btns" style={{ marginBottom: 8, gridTemplateColumns: '1fr 1fr 1fr' }}>
-              {(['up', 'down', 'updown'] as const).map((pat) => (
-                <button
-                  key={pat}
-                  className={`wave ${p.arpPattern === pat ? 'on' : ''}`}
-                  onClick={() => set({ arpPattern: pat })}
-                  title={pat === 'up' ? 'Lowest pitch to highest' : pat === 'down' ? 'Highest pitch to lowest' : 'Up then back down'}
-                >
-                  {pat}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="knob-row">
+          <div className="knob-row" style={{ alignItems: 'center' }}>
+            {visible('arpOn') && (
+              <div className="arp-toggle-group">
+                <div className="unison-btns-label">On/Off</div>
+                <div className="wave-btns wave-btns-row">
+                  <button className={`wave ${!p.arpOn ? 'on' : ''}`} onClick={() => set({ arpOn: false })} title="Play stacked notes together as a chord">
+                    Off
+                  </button>
+                  <button className={`wave ${p.arpOn ? 'on' : ''}`} onClick={() => set({ arpOn: true })} title="Fan stacked notes out into a sequence">
+                    On
+                  </button>
+                </div>
+              </div>
+            )}
+            {visible('arpPattern') && (
+              <div className="arp-toggle-group">
+                <div className="unison-btns-label">Pattern</div>
+                <div className="wave-btns wave-btns-row">
+                  {(['up', 'down', 'updown'] as const).map((pat) => (
+                    <button
+                      key={pat}
+                      className={`wave ${p.arpPattern === pat ? 'on' : ''}`}
+                      onClick={() => set({ arpPattern: pat })}
+                      title={pat === 'up' ? 'Lowest pitch to highest' : pat === 'down' ? 'Highest pitch to lowest' : 'Up then back down'}
+                    >
+                      {pat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {visible('arpRate') && (
-              <Knob label="Rate" value={p.arpRate} min={1} max={4} format={(v) => `${Math.round(v)}/step`} status={statusOf('arpRate')} onChange={(v) => set({ arpRate: Math.round(v) })} hint="How many arp notes fit into one 16th-note step — higher = faster" />
+              <Knob label="Rate" value={p.arpRate} min={1} max={8} format={(v) => `${Math.round(v)}/step`} status={statusOf('arpRate')} onChange={(v) => set({ arpRate: Math.round(v) })} hint="How many arp notes fit into one 16th-note step — higher = faster" />
             )}
           </div>
           <div className="device-note" style={{ padding: '8px 0 0' }}>
@@ -367,7 +374,7 @@ export function DevicePanel({ track }: { track: Track }) {
           )}
           <div className="knob-row">
             {visible('lfoRate') && (
-              <Knob label="Rate" value={p.lfoRate} min={0.05} max={20} log format={(v) => `${v.toFixed(v < 1 ? 2 : 1)}Hz`} status={statusOf('lfoRate')} onChange={(v) => set({ lfoRate: v })} hint="LFO speed, in cycles per second" />
+              <Knob label="Rate" value={p.lfoRate} min={0.02} max={20} log format={(v) => `${v.toFixed(v < 1 ? 2 : 1)}Hz`} status={statusOf('lfoRate')} onChange={(v) => set({ lfoRate: v })} hint="LFO speed, in cycles per second" />
             )}
             {visible('lfoDepth') && (
               <Knob label="Depth" value={p.lfoDepth} min={0} max={1} format={pct} status={statusOf('lfoDepth')} onChange={(v) => set({ lfoDepth: v })} hint="How far the LFO swings its destination — 0 = no audible effect" />
@@ -388,7 +395,7 @@ export function DevicePanel({ track }: { track: Track }) {
           )}
           <div className="knob-row">
             {visible('lfo2Rate') && (
-              <Knob label="Rate" value={p.lfo2Rate} min={0.05} max={20} log format={(v) => `${v.toFixed(v < 1 ? 2 : 1)}Hz`} status={statusOf('lfo2Rate')} onChange={(v) => set({ lfo2Rate: v })} hint="LFO 2 speed, in cycles per second" />
+              <Knob label="Rate" value={p.lfo2Rate} min={0.02} max={20} log format={(v) => `${v.toFixed(v < 1 ? 2 : 1)}Hz`} status={statusOf('lfo2Rate')} onChange={(v) => set({ lfo2Rate: v })} hint="LFO 2 speed, in cycles per second" />
             )}
             {visible('lfo2Depth') && (
               <Knob label="Depth" value={p.lfo2Depth} min={0} max={1} format={pct} status={statusOf('lfo2Depth')} onChange={(v) => set({ lfo2Depth: v })} hint="How far LFO 2 swings its destination — 0 = no audible effect" />
@@ -410,16 +417,13 @@ export function DevicePanel({ track }: { track: Track }) {
               hint="Sweeps cutoff, reverb send, and distortion mix together — a fixed mapping, not user-configurable"
             />
           </div>
-          <div className="device-note" style={{ padding: '8px 0 0' }}>
-            One knob → cutoff, reverb send, and distortion mix together.
-          </div>
         </Section>
       )}
       {(visible('volume') || visible('pan')) && (
         <Section title="OUT" hint="This track's final output level and stereo position">
           <div className="knob-row">
             {visible('volume') && (
-              <Knob label="Volume" value={p.volume} min={-30} max={0} format={(v) => `${v.toFixed(0)}dB`} status={statusOf('volume')} onChange={(v) => set({ volume: v })} hint="Track output level, in dB" />
+              <Knob label="Volume" value={p.volume} min={-30} max={6} format={(v) => `${v.toFixed(0)}dB`} status={statusOf('volume')} onChange={(v) => set({ volume: v })} hint="Track output level, in dB" />
             )}
             {visible('pan') && (
               <Knob
@@ -486,10 +490,10 @@ export function DevicePanel({ track }: { track: Track }) {
               <Knob label="Ratio" value={p.compRatio} min={1} max={20} format={ratio} status={statusOf('compRatio')} onChange={(v) => set({ compRatio: v })} hint="How hard signal above the threshold gets squashed — e.g. 4:1 means 4dB over becomes 1dB over" />
             )}
             {visible('compAttack') && (
-              <Knob label="Attack" value={p.compAttack} min={0.001} max={0.5} log format={ms} status={statusOf('compAttack')} onChange={(v) => set({ compAttack: v })} hint="How quickly the compressor reacts once the signal crosses the threshold" />
+              <Knob label="Attack" value={p.compAttack} min={0.001} max={1} log format={ms} status={statusOf('compAttack')} onChange={(v) => set({ compAttack: v })} hint="How quickly the compressor reacts once the signal crosses the threshold" />
             )}
             {visible('compRelease') && (
-              <Knob label="Release" value={p.compRelease} min={0.01} max={1} log format={ms} status={statusOf('compRelease')} onChange={(v) => set({ compRelease: v })} hint="How quickly the compressor lets go after the signal drops back below threshold" />
+              <Knob label="Release" value={p.compRelease} min={0.01} max={2} log format={ms} status={statusOf('compRelease')} onChange={(v) => set({ compRelease: v })} hint="How quickly the compressor lets go after the signal drops back below threshold" />
             )}
             {visible('compMix') && (
               <Knob label="Mix" value={p.compMix} min={0} max={1} format={pct} status={statusOf('compMix')} onChange={(v) => set({ compMix: v })} hint="Blend of compressed vs. dry signal — 100% wet vs. dry (parallel/'New York' compression) at less than 100%" />
@@ -507,7 +511,7 @@ export function DevicePanel({ track }: { track: Track }) {
               <Knob label="Dist Mix" value={p.distortionMix} min={0} max={1} format={pct} status={statusOf('distortionMix')} onChange={(v) => set({ distortionMix: v })} hint="How much distorted signal is blended back in with the dry signal" />
             )}
             {visible('bitcrushBits') && (
-              <Knob label="Bits" value={p.bitcrushBits} min={1} max={8} format={bits} status={statusOf('bitcrushBits')} onChange={(v) => set({ bitcrushBits: Math.round(v) })} hint="Bit depth — lower values sound more lo-fi/digital/broken" />
+              <Knob label="Bits" value={p.bitcrushBits} min={1} max={16} format={bits} status={statusOf('bitcrushBits')} onChange={(v) => set({ bitcrushBits: Math.round(v) })} hint="Bit depth — lower values sound more lo-fi/digital/broken" />
             )}
             {visible('bitcrushMix') && (
               <Knob label="Crush Mix" value={p.bitcrushMix} min={0} max={1} format={pct} status={statusOf('bitcrushMix')} onChange={(v) => set({ bitcrushMix: v })} hint="How much bitcrushed signal is blended back in with the dry signal" />
