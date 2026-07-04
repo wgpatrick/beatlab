@@ -227,6 +227,34 @@ class Engine {
     chain.synth.triggerAttackRelease(Tone.Frequency(pitch, 'midi').toFrequency(), '8n')
   }
 
+  // ---------- live MIDI monitoring (Phase G) ----------
+  // Real attack/release (not triggerAttackRelease) so a held key sustains for as long as it's
+  // physically held, same as playing any hardware synth.
+
+  async liveNoteOn(track: Track, pitch: number, velocity: number) {
+    await this.ensureStarted()
+    const chain = this.ensureChain(track)
+    const p = track.synth
+    const freq = Tone.Frequency(pitch, 'midi').toFrequency()
+    chain.synth.triggerAttack(freq, undefined, velocity)
+    if (p.osc2Level > 0) chain.osc2.triggerAttack(freq * Math.pow(2, p.osc2Detune / 1200), undefined, velocity)
+    if (p.subLevel > 0) chain.sub.triggerAttack(freq / 2, undefined, velocity)
+    if (p.noiseLevel > 0) chain.noise.triggerAttack(undefined, velocity)
+  }
+
+  liveNoteOff(track: Track, pitch: number) {
+    const chain = this.chains.get(track.id)
+    if (!chain) return
+    const freq = Tone.Frequency(pitch, 'midi').toFrequency()
+    // triggerRelease on a note that was never attacked (e.g. osc2 was off at note-on) is a no-op
+    // in Tone.js's PolySynth, so it's safe to call all four unconditionally rather than tracking
+    // which layers were actually sounding.
+    chain.synth.triggerRelease(freq)
+    chain.osc2.triggerRelease(freq * Math.pow(2, track.synth.osc2Detune / 1200))
+    chain.sub.triggerRelease(freq / 2)
+    chain.noise.triggerRelease()
+  }
+
   async play() {
     await this.ensureStarted()
     const s = useStore.getState()
@@ -305,23 +333,32 @@ class Engine {
         }
 
         for (const n of tr.notes) {
-          if (n.start === step) {
-            const dur = Math.max(n.duration * stepSeconds * 0.9, 0.05)
-            let freq = Tone.Frequency(n.pitch, 'midi').toFrequency()
-            if (p.lfoDest === 'pitch' && lfoOn) freq *= Math.pow(2, (p.lfoDepth * lfoValue * 100) / 1200)
-            chain.synth.triggerAttackRelease(freq, dur, swingTime, n.velocity)
-            if (p.osc2Level > 0) chain.osc2.triggerAttackRelease(freq * Math.pow(2, p.osc2Detune / 1200), dur, swingTime, n.velocity)
-            if (p.subLevel > 0) chain.sub.triggerAttackRelease(freq / 2, dur, swingTime, n.velocity)
-            if (p.noiseLevel > 0) chain.noise.triggerAttackRelease(dur, swingTime, n.velocity)
-            if (p.filterEnvAmount > 0) {
-              const peak = Math.max(baseCutoff * Math.pow(2, p.filterEnvAmount * 4), 20)
-              const sustainHz = Math.max(baseCutoff * Math.pow(2, p.filterEnvAmount * 4 * p.filterEnvSustain), 20)
-              chain.filter.frequency.cancelScheduledValues(swingTime)
-              chain.filter.frequency.setValueAtTime(Math.max(baseCutoff, 20), swingTime)
-              chain.filter.frequency.exponentialRampToValueAtTime(peak, swingTime + Math.max(p.filterEnvAttack, 0.001))
-              chain.filter.frequency.exponentialRampToValueAtTime(sustainHz, swingTime + Math.max(p.filterEnvAttack, 0.001) + Math.max(p.filterEnvDecay, 0.001))
-              chain.filter.frequency.exponentialRampToValueAtTime(Math.max(baseCutoff, 20), swingTime + dur + Math.max(p.filterEnvRelease, 0.001))
-            }
+          // Notes are stored in continuous (possibly fractional) step units — MIDI-recorded notes
+          // (Phase G) land between grid lines on purpose. quantizeStrength (0..100) blends a note's
+          // raw start toward the nearest whole step at *playback* time only; it never mutates the
+          // stored note. At strength 0 (default) or an already-grid-aligned note, effStart === n.start
+          // exactly, so this reduces to the pre-Phase-G `n.start === step` check with zero behavior change.
+          const effStart =
+            s.quantizeStrength > 0
+              ? n.start + (Math.round(n.start) - n.start) * (s.quantizeStrength / 100)
+              : n.start
+          if (Math.floor(effStart) !== step) continue
+          const noteTime = swingTime + (effStart - step) * stepSeconds
+          const dur = Math.max(n.duration * stepSeconds * 0.9, 0.05)
+          let freq = Tone.Frequency(n.pitch, 'midi').toFrequency()
+          if (p.lfoDest === 'pitch' && lfoOn) freq *= Math.pow(2, (p.lfoDepth * lfoValue * 100) / 1200)
+          chain.synth.triggerAttackRelease(freq, dur, noteTime, n.velocity)
+          if (p.osc2Level > 0) chain.osc2.triggerAttackRelease(freq * Math.pow(2, p.osc2Detune / 1200), dur, noteTime, n.velocity)
+          if (p.subLevel > 0) chain.sub.triggerAttackRelease(freq / 2, dur, noteTime, n.velocity)
+          if (p.noiseLevel > 0) chain.noise.triggerAttackRelease(dur, noteTime, n.velocity)
+          if (p.filterEnvAmount > 0) {
+            const peak = Math.max(baseCutoff * Math.pow(2, p.filterEnvAmount * 4), 20)
+            const sustainHz = Math.max(baseCutoff * Math.pow(2, p.filterEnvAmount * 4 * p.filterEnvSustain), 20)
+            chain.filter.frequency.cancelScheduledValues(noteTime)
+            chain.filter.frequency.setValueAtTime(Math.max(baseCutoff, 20), noteTime)
+            chain.filter.frequency.exponentialRampToValueAtTime(peak, noteTime + Math.max(p.filterEnvAttack, 0.001))
+            chain.filter.frequency.exponentialRampToValueAtTime(sustainHz, noteTime + Math.max(p.filterEnvAttack, 0.001) + Math.max(p.filterEnvDecay, 0.001))
+            chain.filter.frequency.exponentialRampToValueAtTime(Math.max(baseCutoff, 20), noteTime + dur + Math.max(p.filterEnvRelease, 0.001))
           }
         }
       }

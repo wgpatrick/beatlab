@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { ArrangementState, DrumLane, DrumPattern, Note, Scene, SectionType, SynthParams, Track } from '../types'
 import { engine } from '../audio/engine'
+import { midiInput } from '../audio/midi'
+import { handleMidiNoteOff, handleMidiNoteOn, releaseAllHeld } from '../audio/midiRecorder'
 import { findLesson, LESSONS, nextLessonId, sandboxTracks, type Lesson, type LessonParams } from '../lessons/curriculum'
 import type { ScoreMap } from '../lessons/framework'
 
@@ -71,6 +73,14 @@ export interface AppState {
   /** User-toggleable scale highlighting (Ableton's "Scale Mode"), independent of any lesson's
    * own scalePcs — root is a pitch class 0..11. */
   scaleLock: { root: number; scale: string } | null
+  /** Phase G: live MIDI input. isRecording only captures notes while isPlaying is also true —
+   * arming without playback just gets you live monitoring, no capture. quantizeStrength (0..100)
+   * blends every note's *playback* time toward the nearest grid step (0 = fully as recorded,
+   * 100 = fully snapped); it's applied non-destructively in Engine.tick(), never written back
+   * into a note. */
+  midi: { supported: boolean; connected: boolean; deviceName: string | null; error: string | null }
+  isRecording: boolean
+  quantizeStrength: number
 
   lesson: () => Lesson | undefined
   selectTrack: (id: string) => void
@@ -109,6 +119,10 @@ export interface AppState {
   removeAutomationPoint: (trackId: string, time: number) => void
   clearAutomation: (trackId: string) => void
   setScaleLock: (lock: { root: number; scale: string } | null) => void
+  connectMidi: () => Promise<void>
+  toggleRecording: () => void
+  setQuantizeStrength: (v: number) => void
+  recordNote: (trackId: string, note: Omit<Note, 'id'>) => void
 }
 
 const firstLesson = (() => {
@@ -141,6 +155,9 @@ export const useStore = create<AppState>()((set, get) => ({
   clipboard: null,
   scenes: [],
   scaleLock: null,
+  midi: { supported: midiInput.supported, connected: false, deviceName: null, error: null },
+  isRecording: false,
+  quantizeStrength: 0,
 
   lesson: () => (get().mode === 'lesson' ? findLesson(get().currentLessonId) : undefined),
 
@@ -255,7 +272,8 @@ export const useStore = create<AppState>()((set, get) => ({
 
   stop: () => {
     engine.stop()
-    set({ isPlaying: false })
+    releaseAllHeld() // don't leave a MIDI note stuck sounding past the end of a take
+    set({ isPlaying: false, isRecording: false })
   },
 
   loadLesson: (id) => {
@@ -534,6 +552,51 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   setScaleLock: (lock) => set({ scaleLock: lock }),
+
+  // ---------- MIDI input (Phase G) ----------
+
+  connectMidi: async () => {
+    midiInput.setHandlers({ onNoteOn: handleMidiNoteOn, onNoteOff: handleMidiNoteOff })
+    try {
+      const devices = await midiInput.connect()
+      set({
+        midi: {
+          supported: midiInput.supported,
+          connected: devices.length > 0,
+          deviceName: devices[0]?.name ?? null,
+          error: devices.length ? null : 'No MIDI devices found — plug in a keyboard and reconnect.',
+        },
+      })
+    } catch (err) {
+      set({
+        midi: {
+          supported: midiInput.supported,
+          connected: false,
+          deviceName: null,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      })
+    }
+  },
+
+  // Arming pushes one history entry for the whole take (like a drag gesture) rather than one per
+  // recorded note; individual notes land via recordNote below without touching history again.
+  toggleRecording: () => {
+    const recording = !get().isRecording
+    if (recording) get().pushHistory()
+    else releaseAllHeld()
+    set({ isRecording: recording })
+  },
+
+  setQuantizeStrength: (v) => set({ quantizeStrength: Math.min(100, Math.max(0, Math.round(v))) }),
+
+  recordNote: (trackId, note) => {
+    set({
+      tracks: get().tracks.map((t) =>
+        t.id === trackId ? { ...t, notes: [...t.notes, { id: `u${noteCounter++}`, ...note }] } : t,
+      ),
+    })
+  },
 }))
 
 // expose for debugging / testing in dev

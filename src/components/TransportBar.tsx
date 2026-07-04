@@ -17,6 +17,12 @@ export function TransportBar() {
   const future = useStore((s) => s.future)
   const undo = useStore((s) => s.undo)
   const redo = useStore((s) => s.redo)
+  const midi = useStore((s) => s.midi)
+  const connectMidi = useStore((s) => s.connectMidi)
+  const isRecording = useStore((s) => s.isRecording)
+  const toggleRecording = useStore((s) => s.toggleRecording)
+  const quantizeStrength = useStore((s) => s.quantizeStrength)
+  const setQuantizeStrength = useStore((s) => s.setQuantizeStrength)
 
   const bar = currentStep >= 0 ? Math.floor(currentStep / 16) + 1 : 1
   const beat = currentStep >= 0 ? Math.floor((currentStep % 16) / 4) + 1 : 1
@@ -36,6 +42,13 @@ export function TransportBar() {
         </button>
         <button className="tbtn stopb" title="Stop (Space)" onClick={stop}>
           ■
+        </button>
+        <button
+          className={`tbtn recb ${isRecording ? 'active' : ''}`}
+          title="Arm MIDI recording — captures notes played on a connected keyboard while playing"
+          onClick={toggleRecording}
+        >
+          ●
         </button>
       </div>
       <div className="transport-group">
@@ -61,9 +74,39 @@ export function TransportBar() {
           />
           SWING
         </label>
+        <label
+          className="bpm-label"
+          title="How much recorded MIDI notes snap to the grid at playback: 0 = play exactly as recorded, 100 = fully quantized"
+        >
+          <input
+            className="bpm-input"
+            type="number"
+            min={0}
+            max={100}
+            value={quantizeStrength}
+            onChange={(e) => setQuantizeStrength(Number(e.target.value))}
+          />
+          QUANTIZE
+        </label>
         <div className="position" title="bar . beat">
           {bar}.{beat}
         </div>
+      </div>
+      <div className="transport-group midi-group">
+        {!midi.supported ? (
+          <span className="midi-status midi-unsupported" title="Safari doesn't implement the Web MIDI API — try Chrome, Edge, or Firefox">
+            MIDI not supported in this browser
+          </span>
+        ) : midi.connected ? (
+          <span className="midi-status midi-connected" title={midi.deviceName ?? undefined}>
+            MIDI: {midi.deviceName}
+          </span>
+        ) : (
+          <button className="tbtn midi-connect" onClick={() => void connectMidi()}>
+            Connect MIDI
+          </button>
+        )}
+        {midi.error && <span className="midi-status midi-error">{midi.error}</span>}
       </div>
       <div className="transport-group">
         <button className="tbtn" title="Undo (Ctrl/Cmd+Z)" disabled={!past.length} onClick={undo}>

@@ -89,12 +89,39 @@ button {
   background: var(--green);
   color: #10281a;
 }
+.tbtn.recb.active {
+  background: var(--red);
+  color: #2a0e10;
+}
 .tbtn:disabled {
   opacity: 0.35;
   cursor: default;
 }
 .tbtn:disabled:hover {
   color: var(--dim);
+}
+
+.midi-group {
+  gap: 8px;
+}
+.midi-connect {
+  width: auto;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.midi-status {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+}
+.midi-status.midi-connected {
+  color: var(--green);
+}
+.midi-status.midi-unsupported {
+  color: var(--dim);
+}
+.midi-status.midi-error {
+  color: var(--red);
 }
 
 .bpm-label {
