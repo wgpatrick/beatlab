@@ -3,6 +3,7 @@ import type { ArrangementState, AutomatableParam, AutomationCurve, DrumLane, Dru
 import { engine } from '../audio/engine'
 import { midiInput } from '../audio/midi'
 import { handleMidiNoteOff, handleMidiNoteOn, releaseAllHeld } from '../audio/midiRecorder'
+import { setComputerKeyboardEnabled as setComputerKeyboardListening, setComputerKeyboardHandlers } from '../audio/computerKeyboard'
 import { findLesson, LESSONS, nextLessonId, sandboxTracks, type Lesson, type LessonParams } from '../lessons/curriculum'
 import type { ScoreMap } from '../lessons/framework'
 
@@ -91,6 +92,9 @@ export interface AppState {
   /** Phase K: master bus loudness in dBFS (via Tone.Meter), set directly by Engine once per step
    * during playback — an approximate/instantaneous reading, not true integrated LUFS. */
   masterLevel: number | null
+  /** "Musical typing" — a plain computer keyboard standing in for a MIDI keyboard, for anyone
+   * without real MIDI hardware. Feeds the exact same recording/live-play pipeline as real MIDI. */
+  computerKeyboardEnabled: boolean
 
   lesson: () => Lesson | undefined
   selectTrack: (id: string) => void
@@ -133,6 +137,7 @@ export interface AppState {
   setMacroValue: (trackId: string, value: number) => void
   loadDrumSample: (file: File) => Promise<void>
   clearDrumSample: () => void
+  setComputerKeyboardEnabled: (on: boolean) => void
   setScaleLock: (lock: { root: number; scale: string } | null) => void
   connectMidi: () => Promise<void>
   toggleRecording: () => void
@@ -176,6 +181,7 @@ export const useStore = create<AppState>()((set, get) => ({
   automationArm: null,
   sampleLoaded: null,
   masterLevel: null,
+  computerKeyboardEnabled: false,
 
   lesson: () => (get().mode === 'lesson' ? findLesson(get().currentLessonId) : undefined),
 
@@ -620,6 +626,14 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   clearDrumSample: () => engine.clearDrumSample(),
+
+  // ---------- Musical typing (computer keyboard as a MIDI stand-in) ----------
+
+  setComputerKeyboardEnabled: (on) => {
+    setComputerKeyboardHandlers({ onNoteOn: handleMidiNoteOn, onNoteOff: handleMidiNoteOff })
+    setComputerKeyboardListening(on)
+    set({ computerKeyboardEnabled: on })
+  },
 
   // ---------- MIDI input (Phase G) ----------
 

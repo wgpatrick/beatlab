@@ -127,6 +127,18 @@ button {
   padding: 0 10px;
   white-space: nowrap;
 }
+.keyboard-toggle {
+  width: auto;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.keyboard-toggle.active {
+  background: var(--accent);
+  color: #221600;
+}
+.keyboard-hint {
+  gap: 0;
+}
 .midi-status {
   font-size: 10px;
   letter-spacing: 0.5px;

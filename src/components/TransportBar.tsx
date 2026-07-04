@@ -24,6 +24,8 @@ export function TransportBar() {
   const quantizeStrength = useStore((s) => s.quantizeStrength)
   const setQuantizeStrength = useStore((s) => s.setQuantizeStrength)
   const masterLevel = useStore((s) => s.masterLevel)
+  const computerKeyboardEnabled = useStore((s) => s.computerKeyboardEnabled)
+  const setComputerKeyboardEnabled = useStore((s) => s.setComputerKeyboardEnabled)
 
   const bar = currentStep >= 0 ? Math.floor(currentStep / 16) + 1 : 1
   const beat = currentStep >= 0 ? Math.floor((currentStep % 16) / 4) + 1 : 1
@@ -108,7 +110,26 @@ export function TransportBar() {
           </button>
         )}
         {midi.error && <span className="midi-status midi-error">{midi.error}</span>}
+        <button
+          className={`tbtn keyboard-toggle ${computerKeyboardEnabled ? 'active' : ''}`}
+          title={
+            'No MIDI keyboard? Play with your computer keyboard instead — feeds the same live-play/recording pipeline.\n\n' +
+            'Black:   S  D     G  H  J     L  ;        2  3     5  6  7     9  0\n' +
+            'White: Z  X  C  V  B  N  M  ,  .  /      Q  W  E  R  T  Y  U  I  O  P\n' +
+            'Note:  C4 D4 E4 F4 G4 A4 B4 C5 D5 E5     C5 D5 E5 F5 G5 A5 B5 C6 D6 E6'
+          }
+          onClick={() => setComputerKeyboardEnabled(!computerKeyboardEnabled)}
+        >
+          ⌨ Type to Play
+        </button>
       </div>
+      {computerKeyboardEnabled && (
+        <div className="transport-group keyboard-hint" title="Click Type to Play again to turn this off">
+          <span className="midi-status">
+            Z X C V B N M , . / = C4-E5 · S D G H J L ; = black keys · Q-P row = one octave up
+          </span>
+        </div>
+      )}
       <div className="transport-group" title="Master bus level (approximate, instantaneous dBFS via a limiter+meter — not true integrated LUFS)">
         <span className="master-meter-label">MASTER</span>
         <div className="master-meter">
