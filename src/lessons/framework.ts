@@ -47,6 +47,21 @@ const PARAM_TOLERANCE: Partial<Record<keyof SynthParams, Tolerance>> = {
   filterEnvRelease: { tight: 0.3, loose: 0.8, log: true },
   lfoRate: { tight: 0.3, loose: 0.7, log: true },
   lfoDepth: { tight: 0.15, loose: 0.35 },
+  // Phase E: mixing-effects ear training tolerances
+  eqLow: { tight: 2, loose: 5 },
+  eqMid: { tight: 2, loose: 5 },
+  eqHigh: { tight: 2, loose: 5 },
+  compThreshold: { tight: 3, loose: 8 },
+  compRatio: { tight: 0.75, loose: 2 },
+  compAttack: { tight: 0.3, loose: 0.7, log: true },
+  compRelease: { tight: 0.3, loose: 0.7, log: true },
+  compMix: { tight: 0.15, loose: 0.35 },
+  distortionAmount: { tight: 0.15, loose: 0.35 },
+  distortionMix: { tight: 0.15, loose: 0.35 },
+  bitcrushBits: { tight: 1, loose: 2 },
+  bitcrushMix: { tight: 0.15, loose: 0.35 },
+  sendMod: { tight: 0.1, loose: 0.3 },
+  duckAmount: { tight: 0.15, loose: 0.35 },
 }
 
 // string-typed params (osc, filterType, osc2Type, lfoDest, ...) score as an exact match; numeric

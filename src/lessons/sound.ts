@@ -1,4 +1,4 @@
-import type { Note, OscType, SynthParams } from '../types'
+import { DEFAULT_SYNTH, type Note, type OscType, type SynthParams } from '../types'
 import {
   CHORD_VOICINGS,
   checkTranscription,
@@ -22,6 +22,7 @@ import {
 
 const SYNTH = 'Synthesis'
 const EAR = 'Ear Training'
+const MIXING = 'Mixing'
 
 // ---------- progressive parameter reveal ----------
 // Cumulative: each stage lists everything taught up to and including it. The device panel hides
@@ -36,6 +37,11 @@ const P_FILTERENV: (keyof SynthParams)[] = [...P_OSCBANK, 'filterEnvAmount', 'fi
 const P_LFO: (keyof SynthParams)[] = [...P_FILTERENV, 'lfoRate', 'lfoDepth', 'lfoDest']
 const P_FILTERTYPE: (keyof SynthParams)[] = [...P_LFO, 'filterType']
 const P_EFFECTS: (keyof SynthParams)[] = [...P_FILTERTYPE, 'pan', 'sendReverb', 'sendDelay']
+// Phase E: mixing effects — same cumulative-reveal pattern.
+const P_EQ: (keyof SynthParams)[] = [...P_EFFECTS, 'eqLow', 'eqMid', 'eqHigh']
+const P_COMP: (keyof SynthParams)[] = [...P_EQ, 'compThreshold', 'compRatio', 'compAttack', 'compRelease', 'compMix']
+const P_DIST: (keyof SynthParams)[] = [...P_COMP, 'distortionAmount', 'distortionMix', 'bitcrushBits', 'bitcrushMix']
+const P_MIX: (keyof SynthParams)[] = [...P_DIST, 'insertOrder', 'sendMod', 'duckSource', 'duckAmount']
 
 function messageFor(scores: ScoreMap, hints: Partial<Record<keyof SynthParams, string>>, successMsg: string) {
   const entries = Object.entries(scores) as [keyof SynthParams, NonNullable<ScoreMap[keyof SynthParams]>][]
@@ -69,14 +75,10 @@ const CHORD_PHRASE_SECONDS = [
   { pitch: 53, time: 1.8, dur: 1.6 }, { pitch: 57, time: 1.8, dur: 1.6 }, { pitch: 60, time: 1.8, dur: 1.6 },
 ]
 
-const basePatch = (over: Partial<SynthParams>): SynthParams => ({
-  osc: 'sawtooth', cutoff: 9000, resonance: 0.8, filterType: 'lowpass', attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3, volume: -10,
-  pan: 0, sendReverb: 0, sendDelay: 0,
-  osc2Type: 'sawtooth', osc2Level: 0, osc2Detune: 12, subLevel: 0, noiseLevel: 0,
-  filterEnvAmount: 0, filterEnvAttack: 0.01, filterEnvDecay: 0.2, filterEnvSustain: 0.3, filterEnvRelease: 0.2,
-  lfoRate: 4, lfoDepth: 0, lfoDest: 'off',
-  ...over,
-})
+// DEFAULT_SYNTH already *is* this module's base patch (every field below matched it field-for-field
+// before Phase E added more) — spreading it instead of hand-listing keeps this forward-compatible
+// with any future SynthParams field for free.
+const basePatch = (over: Partial<SynthParams>): SynthParams => ({ ...DEFAULT_SYNTH, ...over })
 
 // ================= MODULE 4: SYNTHESIS =================
 
@@ -494,6 +496,183 @@ const synthLessons: Lesson[] = [
   },
 ]
 
+// ================= MODULE 4b: MIXING (Phase E) =================
+
+const mixingLessons: Lesson[] = [
+  {
+    id: 'intro-eq',
+    module: MIXING,
+    title: 'EQ: Carving Space',
+    summary:
+      'A 3-band EQ (Low/Mid/High) boosts or cuts a range of frequencies in dB. Unlike the filter (which rolls off everything past a cutoff), EQ lets you shape three bands independently — cut the boxy midrange, add a touch of top-end air, without touching the low end at all.',
+    task: 'On this pad, cut MID by at least 6dB (carve out the boxy midrange) and boost HIGH by at least 3dB (add air), while leaving LOW alone.',
+    hints: [
+      'The filter only rolls off one end of the spectrum; EQ can boost or cut a specific band while leaving the rest untouched.',
+      'A midrange cut is the single most common "make room in the mix" move — it\'s what makes a pad sit behind a lead instead of fighting it.',
+    ],
+    centerPitch: 60,
+    visibleParams: P_EQ,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Pad', '#61afef', { osc: 'triangle', cutoff: 5000, attack: 0.4, decay: 0.3, sustain: 0.7, release: 1.0 }, [n(57, 0, 16), n(60, 0, 16), n(64, 0, 16)])],
+      loopBars: 1,
+      bpm: 100,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.eqMid > -6) issues.push(`mid ${p.eqMid.toFixed(1)}dB (need ≤ -6dB to carve out the boxy midrange)`)
+      if (p.eqHigh < 3) issues.push(`high ${p.eqHigh.toFixed(1)}dB (need ≥ +3dB of air on top)`)
+      if (Math.abs(p.eqLow) > 3) issues.push(`low ${p.eqLow.toFixed(1)}dB (leave the low band alone — within ±3dB)`)
+      if (issues.length) return fail('Not carved yet — ' + issues.join('; ') + '.')
+      return pass('That midrange scoop plus a little top-end air is the classic EQ move for making room for a lead or vocal.')
+    },
+  },
+  {
+    id: 'intro-compressor',
+    module: MIXING,
+    title: 'Compressor: Threshold, Ratio, Mix',
+    summary:
+      'A compressor turns down anything louder than THRESHOLD, by a factor of RATIO (4:1 means 4dB over threshold becomes 1dB over). MIX blends the compressed ("wet") signal back with the original ("dry") — at 100% it\'s fully compressed, at 50% you get parallel ("New York") compression: the punch of heavy compression without losing all the original dynamics.',
+    task: 'On this bass riff, set THRESHOLD to -30dB or lower, RATIO to 6:1 or higher, and MIX to at least 60% — enough to hear it squash and even out.',
+    hints: [
+      'Lower threshold = more of the signal gets compressed. Higher ratio = harder squashing once it crosses that threshold.',
+      'At Mix 100% you hear only the compressed signal; blending in some dry signal (lower Mix) is what "parallel compression" means.',
+    ],
+    centerPitch: 40,
+    visibleParams: P_COMP,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Bass', '#56b6c2', { osc: 'sawtooth', cutoff: 1200, attack: 0.005, decay: 0.15, sustain: 0.2, release: 0.15, volume: -10 }, riffOneBar(33))],
+      loopBars: 1,
+      bpm: 110,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.compThreshold > -30) issues.push(`threshold ${p.compThreshold.toFixed(0)}dB (need ≤ -30dB)`)
+      if (p.compRatio < 6) issues.push(`ratio ${p.compRatio.toFixed(1)}:1 (need ≥ 6:1)`)
+      if (p.compMix < 0.6) issues.push(`mix ${Math.round(p.compMix * 100)}% (need ≥ 60% so you can actually hear it)`)
+      if (issues.length) return fail('Not squashed enough yet — ' + issues.join('; ') + '.')
+      return pass('Low threshold, high ratio, mixed back in — that\'s a compressor doing real work instead of sitting there as a bypassed plugin.')
+    },
+  },
+  {
+    id: 'intro-distortion',
+    module: MIXING,
+    title: 'Distortion & Bitcrush',
+    summary:
+      'DISTORTION adds harmonic saturation by driving the signal into soft clipping — more DRIVE, more harmonics, more "warmth" or "grit" depending on how far you push it. BITCRUSH is a completely different kind of ugly: it reduces bit depth, which sounds digital and lo-fi rather than warm. Both have their own MIX knob so you can blend the effect in rather than committing 100%.',
+    task: 'Push this lead\'s DRIVE to at least 50% with DIST MIX at least 40%, then separately dial in some BITS crush (6 bits or fewer) with CRUSH MIX at least 30% — hear how different "digital ugly" sounds from "analog ugly".',
+    hints: [
+      'Distortion mix at 100% with low drive is subtle warmth; high drive is a fuzzy, aggressive tone.',
+      'Bitcrush at 8 bits is nearly transparent; drop toward 1-2 bits for a crunchy, broken-radio texture.',
+    ],
+    centerPitch: 64,
+    visibleParams: P_DIST,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Lead', '#c678dd', { osc: 'sawtooth', cutoff: 6000, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.2 }, riffOneBar(64))],
+      loopBars: 1,
+      bpm: 120,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.distortionAmount < 0.5) issues.push(`drive ${Math.round(p.distortionAmount * 100)}% (need ≥ 50%)`)
+      if (p.distortionMix < 0.4) issues.push(`dist mix ${Math.round(p.distortionMix * 100)}% (need ≥ 40%)`)
+      if (p.bitcrushBits > 6) issues.push(`bits ${Math.round(p.bitcrushBits)} (need ≤ 6 to actually hear the crush)`)
+      if (p.bitcrushMix < 0.3) issues.push(`crush mix ${Math.round(p.bitcrushMix * 100)}% (need ≥ 30%)`)
+      if (issues.length) return fail('Not there yet — ' + issues.join('; ') + '.')
+      return pass('Two completely different flavors of "broken on purpose" — harmonic saturation from distortion, digital lo-fi from bitcrushing.')
+    },
+  },
+  {
+    id: 'intro-sidechain',
+    module: MIXING,
+    title: 'Sidechain: The Kick-Ducks-Bass Pump',
+    summary:
+      'The "pumping" sound in most dance music isn\'t an effect on the kick — it\'s the BASS ducking out of the way every time the kick hits, so the kick reads as punchy and the low end never turns to mud. Set a track\'s SIDECHAIN source to another track\'s kick pattern and it\'ll duck automatically, in time, every time that kick fires.',
+    task: 'Set the bass track\'s sidechain source to the drum track and DEPTH to at least 60% — you should hear the bass visibly duck on every kick hit.',
+    hints: [
+      'This is scheduled from the kick pattern directly, not a live audio analyzer — but it\'s timed exactly on the beat either way, which is how most producers describe understanding sidechain conceptually.',
+      'Too little depth and you won\'t hear it; too much and the bass disappears entirely on every kick — aim for an audible dip, not a total drop-out.',
+    ],
+    centerPitch: 40,
+    visibleParams: P_MIX,
+    setup: () => ({
+      tracks: [
+        drumTrack({ kick: [0, 4, 8, 12], hat: [2, 6, 10, 14] }),
+        synthTrack('bass', 'Bass', '#56b6c2', { osc: 'sawtooth', cutoff: 1000, attack: 0.005, decay: 0.2, sustain: 0.9, release: 0.2, volume: -8 }, [n(33, 0, 16)]),
+      ],
+      loopBars: 1,
+      bpm: 122,
+      selectedTrackId: 'bass',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'bass').synth
+      const issues: string[] = []
+      if (p.duckSource !== 'drums') issues.push('sidechain source isn\'t set to the drum track')
+      if (p.duckAmount < 0.6) issues.push(`depth ${Math.round(p.duckAmount * 100)}% (need ≥ 60%)`)
+      if (issues.length) return fail('Not pumping yet — ' + issues.join('; ') + '.')
+      return pass('That\'s the sidechain pump — the bass ducking out of the kick\'s way, on every hit, automatically.')
+    },
+  },
+  matchLesson({
+    id: 'match-eq-carve',
+    module: MIXING,
+    title: 'Match: The EQ Carve',
+    summary:
+      'This pad has been EQ\'d to sit behind a lead — a scooped midrange and a lifted top end. Match it by ear.',
+    taskNote: 'The base patch is already right — only the three EQ bands differ.',
+    hints: [
+      'A/B against the target: does yours sound boxier/more midrange-forward? That\'s a missing mid cut.',
+      'Does the target sound airier/brighter on top? That\'s a high boost.',
+      'The low end is close between the two — focus on mid and high.',
+    ],
+    target: basePatch({ osc: 'triangle', cutoff: 5000, attack: 0.4, decay: 0.3, sustain: 0.7, release: 1.0, volume: -12, eqLow: -2, eqMid: -8, eqHigh: 6 }),
+    phrase: CHORD_PHRASE_SECONDS,
+    userNotes: () => [n(57, 0, 16), n(60, 0, 16), n(64, 0, 16)],
+    userStart: { osc: 'triangle', cutoff: 5000, attack: 0.4, decay: 0.3, sustain: 0.7, release: 1.0, volume: -12, eqLow: 0, eqMid: 0, eqHigh: 0 },
+    paramKeys: ['eqLow', 'eqMid', 'eqHigh'],
+    paramHints: {
+      eqLow: 'low band is a little further back than yours',
+      eqMid: 'the boxy midrange has been scooped out more than yours',
+      eqHigh: 'there\'s more top-end air than yours',
+    },
+    successMsg: 'That scoop-and-lift EQ curve by ear — the same move mixing engineers make to fit a pad behind a lead.',
+    centerPitch: 60,
+    bpm: 100,
+    visibleParams: P_EQ,
+  }),
+  matchLesson({
+    id: 'match-parallel-comp',
+    module: MIXING,
+    title: 'Match: Parallel Compression',
+    summary:
+      'This bass has been parallel-compressed: a hard-compressed copy blended back in with the original for punch without losing all the dynamics. Match the threshold, ratio, and blend by ear.',
+    taskNote: 'The base patch is already right — only the compressor settings differ.',
+    hints: [
+      'Compressed-and-blended reads as "punchier and more even," not "quieter" — listen for evened-out dynamics, not volume.',
+      'More mix = more of that squashed character audible under the original.',
+    ],
+    target: basePatch({ osc: 'sawtooth', cutoff: 1200, attack: 0.005, decay: 0.15, sustain: 0.2, release: 0.15, volume: -10, compThreshold: -34, compRatio: 8, compMix: 0.75 }),
+    phrase: BASS_PHRASE_SECONDS,
+    userNotes: () => riffOneBar(33),
+    userStart: { osc: 'sawtooth', cutoff: 1200, attack: 0.005, decay: 0.15, sustain: 0.2, release: 0.15, volume: -10, compThreshold: -24, compRatio: 4, compMix: 0 },
+    paramKeys: ['compThreshold', 'compRatio', 'compMix'],
+    paramHints: {
+      compThreshold: 'more of the signal is being grabbed than yours — lower the threshold',
+      compRatio: 'it\'s squashed harder than yours — raise the ratio',
+      compMix: 'there\'s more compressed character blended in than yours — raise mix',
+    },
+    successMsg: 'Threshold, ratio, and blend amount by ear — that\'s hearing a compression setting, not just hearing "compressed vs not".',
+    centerPitch: 40,
+    bpm: 110,
+    visibleParams: P_COMP,
+  }),
+]
+
 // ================= MODULE 5: EAR TRAINING =================
 
 function matchLesson(opts: {
@@ -513,10 +692,11 @@ function matchLesson(opts: {
   bpm?: number
   centerPitch?: number
   visibleParams?: (keyof SynthParams)[]
+  module?: string
 }): Lesson {
   return {
     id: opts.id,
-    module: EAR,
+    module: opts.module ?? EAR,
     title: opts.title,
     summary: opts.summary,
     task: `Press PLAY TARGET to hear the mystery patch, then recreate it on your synth. ${opts.taskNote}`,
@@ -1083,5 +1263,6 @@ const transcribeLessons: Lesson[] = [
 
 export const SOUND_MODULES: Module[] = [
   { name: SYNTH, lessons: synthLessons },
+  { name: MIXING, lessons: mixingLessons },
   { name: EAR, lessons: [...earLessons, ...transcribeLessons] },
 ]

@@ -1,6 +1,10 @@
 export type OscType = 'sine' | 'triangle' | 'sawtooth' | 'square'
 export type FilterType = 'lowpass' | 'bandpass' | 'highpass'
 export type LfoDest = 'off' | 'pitch' | 'cutoff' | 'amp'
+// Phase E: the three reorderable insert-effect slots between the filter and the panner. 'dist'
+// is distortion chained into bitcrusher internally (a fixed sub-order) — only the three slots as
+// a block are reorderable, matching the roadmap's "EQ -> compressor -> distortion" default chain.
+export type InsertKind = 'eq' | 'comp' | 'dist'
 
 export interface SynthParams {
   osc: OscType
@@ -34,6 +38,31 @@ export interface SynthParams {
   lfoRate: number // Hz
   lfoDepth: number // 0..1
   lfoDest: LfoDest
+
+  // ---------- Phase E: mixing effects (insert chain: filter -> EQ/comp/dist in insertOrder -> panner) ----------
+  eqLow: number // dB, -24..24
+  eqMid: number
+  eqHigh: number
+  // compressor + manual dry/wet gain-summed mix (Tone.Compressor has no native wet) — compMix 0 = fully
+  // dry (bypassed), 1 = fully compressed; anything between is parallel ("New York") compression.
+  compThreshold: number // dB, -60..0
+  compRatio: number // 1..20
+  compAttack: number // seconds
+  compRelease: number // seconds
+  compMix: number // 0..1
+  // distortion chained into bitcrusher, each with its own native wet mix
+  distortionAmount: number // 0..1, drive
+  distortionMix: number // 0..1
+  bitcrushBits: number // 1..8 (integer)
+  bitcrushMix: number // 0..1
+  insertOrder: InsertKind[] // permutation of ['eq','comp','dist']
+  // modulation-FX shared send bus: chorus -> phaser in series, mirrors sendReverb/sendDelay
+  sendMod: number // 0..1
+  // scheduled sidechain duck: ducks this track's volume whenever duckSource's kick lane hits —
+  // not a real audio-analysis sidechain (see docs/ROADMAP.md Phase E item 23), scheduled from
+  // pattern data the same way the filter envelope is.
+  duckSource: string | null // another track's id, or null = off
+  duckAmount: number // 0..1
 }
 
 export interface Note {
@@ -147,4 +176,20 @@ export const DEFAULT_SYNTH: SynthParams = {
   lfoRate: 4,
   lfoDepth: 0,
   lfoDest: 'off',
+  eqLow: 0,
+  eqMid: 0,
+  eqHigh: 0,
+  compThreshold: -24,
+  compRatio: 4,
+  compAttack: 0.02,
+  compRelease: 0.25,
+  compMix: 0,
+  distortionAmount: 0,
+  distortionMix: 0,
+  bitcrushBits: 8,
+  bitcrushMix: 0,
+  insertOrder: ['eq', 'comp', 'dist'],
+  sendMod: 0,
+  duckSource: null,
+  duckAmount: 0,
 }

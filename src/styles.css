@@ -998,6 +998,46 @@ button.seq-label:hover {
   transform: scale(0.96);
 }
 
+.insert-order-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.insert-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.insert-chip {
+  padding: 6px 10px;
+  background: var(--panel3);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+.insert-swap {
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 12px;
+  padding: 0 2px;
+}
+.insert-swap:hover {
+  color: var(--accent);
+}
+
+.duck-source-select {
+  background: var(--panel3);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text);
+  font-size: 10px;
+  padding: 5px 6px;
+  margin-bottom: 8px;
+}
+
 .device-note {
   padding: 24px 16px;
   color: var(--dim);

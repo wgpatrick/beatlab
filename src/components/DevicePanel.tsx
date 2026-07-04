@@ -1,4 +1,4 @@
-import { DRUM_LABELS, DRUM_LANES, type FilterType, type LfoDest, type OscType, type SynthParams, type Track } from '../types'
+import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type LfoDest, type OscType, type SynthParams, type Track } from '../types'
 import { engine } from '../audio/engine'
 import { useStore } from '../state/store'
 import { Knob } from './Knob'
@@ -28,11 +28,17 @@ const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.rou
 const ms = (v: number) => (v >= 1 ? `${v.toFixed(1)}s` : `${Math.round(v * 1000)}ms`)
 const pct = (v: number) => `${Math.round(v * 100)}%`
 const cents = (v: number) => `${v >= 0 ? '+' : ''}${Math.round(v)}c`
+const db = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}dB`
+const ratio = (v: number) => `${v.toFixed(1)}:1`
+const bits = (v: number) => `${Math.round(v)}bit`
+
+const INSERT_LABELS: Record<InsertKind, string> = { eq: 'EQ', comp: 'COMP', dist: 'DIST' }
 
 export function DevicePanel({ track }: { track: Track }) {
   const setSynth = useStore((s) => s.setSynth)
   const lesson = useStore((s) => s.lesson())
   const paramScores = useStore((s) => s.paramScores)
+  const allTracks = useStore((s) => s.tracks)
 
   const visibleParams = lesson?.visibleParams
   const visible = (key: keyof SynthParams) => !visibleParams || visibleParams.includes(key)
@@ -68,6 +74,19 @@ export function DevicePanel({ track }: { track: Track }) {
   const showFilterEnv =
     visible('filterEnvAmount') || visible('filterEnvAttack') || visible('filterEnvDecay') || visible('filterEnvSustain') || visible('filterEnvRelease')
   const showLfo = visible('lfoRate') || visible('lfoDepth') || visible('lfoDest')
+  const showEq = visible('eqLow') || visible('eqMid') || visible('eqHigh')
+  const showComp = visible('compThreshold') || visible('compRatio') || visible('compAttack') || visible('compRelease') || visible('compMix')
+  const showDist = visible('distortionAmount') || visible('distortionMix') || visible('bitcrushBits') || visible('bitcrushMix')
+  const showChainOrder = (showEq || showComp || showDist) && visible('insertOrder')
+  const showModSend = visible('sendMod')
+  const showSidechain = visible('duckSource') || visible('duckAmount')
+  const duckSourceOptions = allTracks.filter((t) => t.kind === 'drums' && t.id !== track.id)
+
+  const swapInsertOrder = (i: number) => {
+    const next = [...p.insertOrder]
+    ;[next[i], next[i + 1]] = [next[i + 1], next[i]]
+    set({ insertOrder: next })
+  }
 
   return (
     <div className="device">
@@ -251,7 +270,102 @@ export function DevicePanel({ track }: { track: Track }) {
             {visible('sendDelay') && (
               <Knob label="Delay" value={p.sendDelay} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} status={statusOf('sendDelay')} onChange={(v) => set({ sendDelay: v })} />
             )}
+            {showModSend && (
+              <Knob label="Mod FX" value={p.sendMod} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} status={statusOf('sendMod')} onChange={(v) => set({ sendMod: v })} />
+            )}
           </div>
+        </div>
+      )}
+      {showChainOrder && (
+        <div className="device-section">
+          <div className="device-section-title">CHAIN ORDER</div>
+          <div className="insert-order-row">
+            {p.insertOrder.map((k, i) => (
+              <div className="insert-slot" key={k}>
+                <span className="insert-chip">{INSERT_LABELS[k]}</span>
+                {i < p.insertOrder.length - 1 && (
+                  <button className="insert-swap" title="Swap with next" onClick={() => swapInsertOrder(i)}>
+                    ⇄
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {showEq && (
+        <div className="device-section">
+          <div className="device-section-title">EQ</div>
+          <div className="knob-row">
+            {visible('eqLow') && <Knob label="Low" value={p.eqLow} min={-24} max={24} format={db} status={statusOf('eqLow')} onChange={(v) => set({ eqLow: v })} />}
+            {visible('eqMid') && <Knob label="Mid" value={p.eqMid} min={-24} max={24} format={db} status={statusOf('eqMid')} onChange={(v) => set({ eqMid: v })} />}
+            {visible('eqHigh') && <Knob label="High" value={p.eqHigh} min={-24} max={24} format={db} status={statusOf('eqHigh')} onChange={(v) => set({ eqHigh: v })} />}
+          </div>
+        </div>
+      )}
+      {showComp && (
+        <div className="device-section">
+          <div className="device-section-title">COMPRESSOR</div>
+          <div className="knob-row">
+            {visible('compThreshold') && (
+              <Knob label="Thresh" value={p.compThreshold} min={-60} max={0} format={db} status={statusOf('compThreshold')} onChange={(v) => set({ compThreshold: v })} />
+            )}
+            {visible('compRatio') && (
+              <Knob label="Ratio" value={p.compRatio} min={1} max={20} format={ratio} status={statusOf('compRatio')} onChange={(v) => set({ compRatio: v })} />
+            )}
+            {visible('compAttack') && (
+              <Knob label="Attack" value={p.compAttack} min={0.001} max={0.5} log format={ms} status={statusOf('compAttack')} onChange={(v) => set({ compAttack: v })} />
+            )}
+            {visible('compRelease') && (
+              <Knob label="Release" value={p.compRelease} min={0.01} max={1} log format={ms} status={statusOf('compRelease')} onChange={(v) => set({ compRelease: v })} />
+            )}
+            {visible('compMix') && (
+              <Knob label="Mix" value={p.compMix} min={0} max={1} format={pct} status={statusOf('compMix')} onChange={(v) => set({ compMix: v })} />
+            )}
+          </div>
+        </div>
+      )}
+      {showDist && (
+        <div className="device-section">
+          <div className="device-section-title">DISTORTION / BITCRUSH</div>
+          <div className="knob-row">
+            {visible('distortionAmount') && (
+              <Knob label="Drive" value={p.distortionAmount} min={0} max={1} format={pct} status={statusOf('distortionAmount')} onChange={(v) => set({ distortionAmount: v })} />
+            )}
+            {visible('distortionMix') && (
+              <Knob label="Dist Mix" value={p.distortionMix} min={0} max={1} format={pct} status={statusOf('distortionMix')} onChange={(v) => set({ distortionMix: v })} />
+            )}
+            {visible('bitcrushBits') && (
+              <Knob label="Bits" value={p.bitcrushBits} min={1} max={8} format={bits} status={statusOf('bitcrushBits')} onChange={(v) => set({ bitcrushBits: Math.round(v) })} />
+            )}
+            {visible('bitcrushMix') && (
+              <Knob label="Crush Mix" value={p.bitcrushMix} min={0} max={1} format={pct} status={statusOf('bitcrushMix')} onChange={(v) => set({ bitcrushMix: v })} />
+            )}
+          </div>
+        </div>
+      )}
+      {showSidechain && (
+        <div className="device-section">
+          <div className="device-section-title">SIDECHAIN</div>
+          {visible('duckSource') && (
+            <select
+              className="duck-source-select"
+              value={p.duckSource ?? ''}
+              onChange={(e) => set({ duckSource: e.target.value || null })}
+            >
+              <option value="">Off</option>
+              {duckSourceOptions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  Duck to {t.name}'s kick
+                </option>
+              ))}
+            </select>
+          )}
+          {visible('duckAmount') && (
+            <div className="knob-row">
+              <Knob label="Depth" value={p.duckAmount} min={0} max={1} format={pct} status={statusOf('duckAmount')} onChange={(v) => set({ duckAmount: v })} />
+            </div>
+          )}
         </div>
       )}
       {visibleParams && visibleParams.length === 0 && (

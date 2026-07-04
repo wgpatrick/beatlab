@@ -1,5 +1,5 @@
 import * as Tone from 'tone'
-import { DRUM_LANES, type AutomationPoint, type DrumLane, type SynthParams, type TargetPatch, type Track } from '../types'
+import { DRUM_LANES, type AutomationPoint, type DrumLane, type InsertKind, type SynthParams, type TargetPatch, type Track } from '../types'
 import { useStore } from '../state/store'
 
 // log-space interpolation between breakpoints (frac: 0..1 through the loop) — cutoff perception
@@ -35,6 +35,19 @@ interface SynthChain {
   vol: Tone.Volume
   reverbSend: Tone.Gain
   delaySend: Tone.Gain
+  // Phase E: three reorderable insert slots between filter and panner (see wireInserts below).
+  eq3: Tone.EQ3
+  // parallel ("New York") compression: compIn fans out to a dry path and a compressor path,
+  // both summed at compOut — Tone.Compressor has no native wet/mix, so this is built by hand.
+  compIn: Tone.Gain
+  compDry: Tone.Gain
+  compressor: Tone.Compressor
+  compWet: Tone.Gain
+  compOut: Tone.Gain
+  distortion: Tone.Distortion
+  bitcrush: Tone.BitCrusher
+  modSend: Tone.Gain
+  lastInsertOrder: InsertKind[]
 }
 
 interface DrumKit {
@@ -54,6 +67,9 @@ class Engine {
   // the "one shared reverb + one shared delay return" minimal mixer every DAW tutorial starts with
   private reverbBus: Tone.Reverb | null = null
   private delayBus: Tone.FeedbackDelay | null = null
+  // Phase E: a second shared return bus, chorus -> phaser in series, one combined send level
+  private chorusBus: Tone.Chorus | null = null
+  private phaserBus: Tone.Phaser | null = null
 
   async ensureStarted() {
     if (this.ready) return
@@ -70,8 +86,13 @@ class Engine {
     if (!this.reverbBus) {
       this.reverbBus = new Tone.Reverb({ decay: 2.2, wet: 1 }).toDestination()
       this.delayBus = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.3, wet: 1 }).toDestination()
+      // series, not parallel: chorus feeds into phaser, only the phaser's output reaches the
+      // destination — otherwise the chorus-only signal would double up alongside the phased one.
+      this.chorusBus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, wet: 1 }).start()
+      this.phaserBus = new Tone.Phaser({ frequency: 0.5, octaves: 3, baseFrequency: 1000, wet: 1 }).toDestination()
+      this.chorusBus.connect(this.phaserBus)
     }
-    return { reverb: this.reverbBus, delay: this.delayBus! }
+    return { reverb: this.reverbBus, delay: this.delayBus!, mod: this.chorusBus! }
   }
 
   private buildDrums() {
@@ -147,12 +168,13 @@ class Engine {
   private ensureChain(track: Track): SynthChain {
     let chain = this.chains.get(track.id)
     if (!chain) {
-      const { reverb, delay } = this.getBuses()
+      const { reverb, delay, mod } = this.getBuses()
       const filter = new Tone.Filter(track.synth.cutoff, 'lowpass')
       const panner = new Tone.Panner(track.synth.pan)
       const vol = new Tone.Volume(track.synth.volume)
       const reverbSend = new Tone.Gain(track.synth.sendReverb)
       const delaySend = new Tone.Gain(track.synth.sendDelay)
+      const modSend = new Tone.Gain(track.synth.sendMod)
       const synth = new Tone.PolySynth(Tone.Synth)
       const osc2 = new Tone.PolySynth(Tone.Synth)
       const osc2Gain = new Tone.Gain(0)
@@ -160,20 +182,72 @@ class Engine {
       const subGain = new Tone.Gain(0)
       const noise = new Tone.NoiseSynth({ noise: { type: 'white' } })
       const noiseGain = new Tone.Gain(0)
+
+      // Phase E insert effects — filter feeds into these (order decided by wireInserts below),
+      // which feed into panner.
+      const eq3 = new Tone.EQ3()
+      const compIn = new Tone.Gain()
+      const compDry = new Tone.Gain(1)
+      const compressor = new Tone.Compressor()
+      const compWet = new Tone.Gain(0)
+      const compOut = new Tone.Gain()
+      const distortion = new Tone.Distortion({ distortion: 0, wet: 0 })
+      const bitcrush = new Tone.BitCrusher(8) // wet applied in applyParams, which always runs right after
+
       synth.connect(filter)
       osc2.chain(osc2Gain, filter)
       sub.chain(subGain, filter)
       noise.chain(noiseGain, filter)
-      filter.chain(panner, vol, Tone.getDestination())
+
+      // Parallel ("New York") compression split — static, doesn't move with insertOrder.
+      compIn.fan(compDry, compressor)
+      compressor.connect(compWet)
+      compDry.connect(compOut)
+      compWet.connect(compOut)
+      // Distortion -> bitcrusher fixed sub-chain (only the three slots as a block reorder).
+      distortion.connect(bitcrush)
+
+      panner.chain(vol, Tone.getDestination())
       panner.connect(reverbSend)
       reverbSend.connect(reverb)
       panner.connect(delaySend)
       delaySend.connect(delay)
-      chain = { synth, osc2, osc2Gain, sub, subGain, noise, noiseGain, filter, panner, vol, reverbSend, delaySend }
+      panner.connect(modSend)
+      modSend.connect(mod)
+
+      chain = {
+        synth, osc2, osc2Gain, sub, subGain, noise, noiseGain, filter, panner, vol, reverbSend, delaySend,
+        eq3, compIn, compDry, compressor, compWet, compOut, distortion, bitcrush, modSend, lastInsertOrder: [],
+      }
       this.chains.set(track.id, chain)
+      this.wireInserts(chain, track.synth.insertOrder)
     }
     this.applyParams(chain, track.synth)
     return chain
+  }
+
+  // Rewires filter -> [EQ/comp/dist in the given order] -> panner. Only touches the graph when
+  // the order actually changed (compared to the last-applied order), so normal knob drags — which
+  // call applyParams constantly but never touch insertOrder — don't tear down and rebuild
+  // connections on every frame.
+  private wireInserts(chain: SynthChain, order: InsertKind[]) {
+    if (chain.lastInsertOrder.join(',') === order.join(',')) return
+    chain.filter.disconnect()
+    chain.eq3.disconnect()
+    chain.compOut.disconnect()
+    chain.bitcrush.disconnect()
+    const slot = (k: InsertKind) =>
+      k === 'eq' ? { in: chain.eq3 as Tone.ToneAudioNode, out: chain.eq3 as Tone.ToneAudioNode }
+      : k === 'comp' ? { in: chain.compIn as Tone.ToneAudioNode, out: chain.compOut as Tone.ToneAudioNode }
+      : { in: chain.distortion as Tone.ToneAudioNode, out: chain.bitcrush as Tone.ToneAudioNode }
+    let prevOut: Tone.ToneAudioNode = chain.filter
+    for (const k of order) {
+      const { in: nodeIn, out: nodeOut } = slot(k)
+      prevOut.connect(nodeIn)
+      prevOut = nodeOut
+    }
+    prevOut.connect(chain.panner)
+    chain.lastInsertOrder = [...order]
   }
 
   private applyParams(chain: SynthChain, p: SynthParams) {
@@ -192,6 +266,22 @@ class Engine {
     chain.vol.volume.value = p.volume
     chain.reverbSend.gain.value = p.sendReverb
     chain.delaySend.gain.value = p.sendDelay
+
+    chain.eq3.low.value = p.eqLow
+    chain.eq3.mid.value = p.eqMid
+    chain.eq3.high.value = p.eqHigh
+    chain.compressor.threshold.value = p.compThreshold
+    chain.compressor.ratio.value = p.compRatio
+    chain.compressor.attack.value = p.compAttack
+    chain.compressor.release.value = p.compRelease
+    chain.compDry.gain.value = 1 - p.compMix
+    chain.compWet.gain.value = p.compMix
+    chain.distortion.distortion = p.distortionAmount
+    chain.distortion.wet.value = p.distortionMix
+    chain.bitcrush.bits.value = Math.round(p.bitcrushBits)
+    chain.bitcrush.wet.value = p.bitcrushMix
+    chain.modSend.gain.value = p.sendMod
+    this.wireInserts(chain, p.insertOrder)
   }
 
   updateSynth(track: Track) {
@@ -215,6 +305,15 @@ class Engine {
         chain.vol.dispose()
         chain.reverbSend.dispose()
         chain.delaySend.dispose()
+        chain.eq3.dispose()
+        chain.compIn.dispose()
+        chain.compDry.dispose()
+        chain.compressor.dispose()
+        chain.compWet.dispose()
+        chain.compOut.dispose()
+        chain.distortion.dispose()
+        chain.bitcrush.dispose()
+        chain.modSend.dispose()
         this.chains.delete(id)
       }
     }
@@ -330,6 +429,25 @@ class Engine {
         }
         if (p.lfoDest === 'amp' && lfoOn) {
           chain.vol.volume.linearRampToValueAtTime(p.volume + p.lfoDepth * lfoValue * 12, swingTime + stepSeconds)
+        }
+
+        // Phase E scheduled sidechain duck: not a real audio-analysis sidechain (there's no
+        // envelope follower here) — it ducks this track's volume whenever duckSource's kick lane
+        // has a hit at this step, scheduled from pattern data the same way everything else in this
+        // engine is. Known limitation: this and the lfoDest==='amp' case above both automate
+        // chain.vol.volume, so a track using both at once will have one silently override the
+        // other within the same tick (duck wins, since it runs last) — an edge case rare enough
+        // not to warrant a full modulation-mixing pass for.
+        if (p.duckSource && p.duckAmount > 0) {
+          const source = s.tracks.find((x) => x.id === p.duckSource)
+          const kickHit = source?.kind === 'drums' ? source.pattern.kick[step % 16] : 0
+          if (kickHit) {
+            const dipDb = p.duckAmount * 24
+            chain.vol.volume.cancelScheduledValues(swingTime)
+            chain.vol.volume.setValueAtTime(p.volume, swingTime)
+            chain.vol.volume.linearRampToValueAtTime(p.volume - dipDb, swingTime + 0.005)
+            chain.vol.volume.linearRampToValueAtTime(p.volume, swingTime + 0.16)
+          }
         }
 
         for (const n of tr.notes) {
