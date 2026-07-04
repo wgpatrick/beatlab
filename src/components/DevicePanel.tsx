@@ -254,6 +254,9 @@ export function DevicePanel({ track }: { track: Track }) {
           </div>
         </div>
       )}
+      {visibleParams && visibleParams.length === 0 && (
+        <div className="device-note">Patch is fixed for this drill — the notes are the whole test.</div>
+      )}
     </div>
   )
 }

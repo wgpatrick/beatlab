@@ -1,9 +1,12 @@
 import type { Note, OscType, SynthParams } from '../types'
 import {
+  CHORD_VOICINGS,
+  checkTranscription,
   chordProgressionNotes,
   drumTrack,
   fail,
   n,
+  notesToPhraseSeconds,
   pass,
   rand,
   riffOneBar,
@@ -907,7 +910,174 @@ const earLessons: Lesson[] = [
   }),
 ]
 
+// ---------- ear training: transcribe notes with nothing given, no notation shown ----------
+const TRANSCRIBE_BASS_POOL = [33, 36, 38, 40, 43] // A1 C2 D2 E2 G2 — A minor pentatonic, bass register
+const TRANSCRIBE_BASS_PATCH = basePatch({ osc: 'sawtooth', cutoff: 600, sustain: 0.6, attack: 0.01, decay: 0.2, release: 0.2, volume: -8 })
+const TRANSCRIBE_BASS_BPM = 100
+
+const TRANSCRIBE_LEAD_POOL = [57, 60, 62, 64, 67, 69] // A3 C4 D4 E4 G4 A4 — A minor pentatonic, lead register
+const TRANSCRIBE_LEAD_PATCH = basePatch({ osc: 'square', cutoff: 6000, attack: 0.005, decay: 0.15, sustain: 0.3, release: 0.15 })
+const TRANSCRIBE_LEAD_BPM = 110
+
+const TRANSCRIBE_PAD_PATCH = basePatch({ osc: 'triangle', cutoff: 3000, attack: 0.4, decay: 0.3, sustain: 0.7, release: 1.0, volume: -12 })
+const TRANSCRIBE_PAD_BPM = 95
+
+const randomBassNotes = () => [0, 4, 8, 12].map((s) => n(rand(TRANSCRIBE_BASS_POOL), s, 4))
+const randomLeadNotes = () => [0, 2, 4, 6, 8, 10, 12, 14].map((s) => n(rand(TRANSCRIBE_LEAD_POOL), s, 2))
+const randomPadNotes = () => [0, 1].flatMap((bar) => rand(CHORD_VOICINGS).map((p) => n(p, bar * 16, 16)))
+
+const transcribeLessons: Lesson[] = [
+  {
+    id: 'transcribe-bassline',
+    module: EAR,
+    title: 'Drill: Transcribe the Bassline',
+    summary:
+      'Every match-the-patch drill so far started with the notes already on the grid — you only had to dial in the sound. Now the notes are gone too. This is real transcription: hear a bassline and write down what you heard, one note at a time. The patch is fixed and given, so only your pitch-and-rhythm ear is being tested.',
+    task: 'Press PLAY TARGET, listen to the 4-note bassline, then place matching notes in the empty piano roll. All four are quarter notes landing on the beat — the rhythm is given, find the pitches. Reroll with "New Exercise" for a fresh line.',
+    hints: [
+      'Play your own notes back and A/B directly against the target — that comparison is the whole skill.',
+      'All four notes come from the same small pool of five low pitches — learn those five by ear and you\'re just recognizing which one repeats.',
+      'Work left to right: nail beat 1, then beat 2, and so on — don\'t try to hear the whole line at once.',
+    ],
+    drill: true,
+    centerPitch: 38,
+    visibleParams: [],
+    target: (p) => ({ params: TRANSCRIBE_BASS_PATCH, phrase: notesToPhraseSeconds(p.notes as Note[], TRANSCRIBE_BASS_BPM) }),
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Bass', '#56b6c2', TRANSCRIBE_BASS_PATCH, [])],
+      loopBars: 1,
+      bpm: TRANSCRIBE_BASS_BPM,
+      selectedTrackId: 'synth',
+      noteLength: 4,
+      params: { notes: randomBassNotes() },
+    }),
+    validate: (ctx) =>
+      checkTranscription(
+        track(ctx, 'synth'),
+        ctx.params.notes as Note[],
+        'Transcribed by ear — the actual skill behind sampling a bassline off a record. Reroll for another.',
+      ),
+  },
+  {
+    id: 'transcribe-lead',
+    module: EAR,
+    title: 'Drill: Transcribe the Lead',
+    summary:
+      'Same skill as the bassline drill, faster and higher: an 8-note eighth-note lead line. More notes moving faster means less time to second-guess each one — trust your first read.',
+    task: 'Press PLAY TARGET, listen to the 8-note lead line, then place matching notes. All eight are eighth-notes on the grid — the rhythm is given, find the pitches. Reroll for a fresh line.',
+    hints: [
+      'Loop the target a few times before committing to notes — let the melody\'s shape (up/down contour) sink in first.',
+      'Place a rough guess for all 8 notes first, then fix the ones that sound wrong on playback — faster than perfecting one note at a time.',
+      'Same 6-note pool every round — the more rounds you do, the faster each pitch becomes recognizable on its own.',
+    ],
+    drill: true,
+    centerPitch: 64,
+    visibleParams: [],
+    target: (p) => ({ params: TRANSCRIBE_LEAD_PATCH, phrase: notesToPhraseSeconds(p.notes as Note[], TRANSCRIBE_LEAD_BPM) }),
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Lead', '#c678dd', TRANSCRIBE_LEAD_PATCH, [])],
+      loopBars: 1,
+      bpm: TRANSCRIBE_LEAD_BPM,
+      selectedTrackId: 'synth',
+      noteLength: 2,
+      params: { notes: randomLeadNotes() },
+    }),
+    validate: (ctx) =>
+      checkTranscription(
+        track(ctx, 'synth'),
+        ctx.params.notes as Note[],
+        'Full melodic line, transcribed by ear. Reroll and do it again — this is the skill that lets you learn any riff off a record.',
+      ),
+  },
+  {
+    id: 'transcribe-pad',
+    module: EAR,
+    title: 'Drill: Transcribe the Pad Chords',
+    summary:
+      'Chords instead of single notes: two bars, one triad held per bar. You\'re transcribing three stacked pitches at once, not just one — the same skill from the Chords & Harmony module, now applied by ear instead of by theory.',
+    task: 'Press PLAY TARGET, listen to the two chords, then stack three notes per bar to match. Reroll for a new pair of chords.',
+    hints: [
+      'Isolate the bottom note of each chord first — it anchors everything else.',
+      'These are the same four triads from the Chords & Harmony module (Am, F, C, G) — if a chord sounds familiar, you\'ve heard it before.',
+      'Hold bar 1\'s chord in your head, place it, then move to bar 2 — don\'t try to catch both at once.',
+    ],
+    drill: true,
+    centerPitch: 60,
+    visibleParams: [],
+    target: (p) => ({ params: TRANSCRIBE_PAD_PATCH, phrase: notesToPhraseSeconds(p.notes as Note[], TRANSCRIBE_PAD_BPM) }),
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Pad', '#f7c948', TRANSCRIBE_PAD_PATCH, [])],
+      loopBars: 2,
+      bpm: TRANSCRIBE_PAD_BPM,
+      selectedTrackId: 'synth',
+      noteLength: 16,
+      params: { notes: randomPadNotes() },
+    }),
+    validate: (ctx) =>
+      checkTranscription(track(ctx, 'synth'), ctx.params.notes as Note[], 'Two full chords, transcribed by ear. Reroll for a new progression.'),
+  },
+  {
+    id: 'transcribe-and-match',
+    module: EAR,
+    title: 'Drill: Transcribe AND Match the Patch',
+    summary:
+      'The hardest ear-training exercise here: nothing is given. Each round is a bassline, lead or pad with its notes stripped out AND its patch randomized. Transcribe what you hear, note by note, then dial in the synth to match the sound too.',
+    task: 'Press PLAY TARGET. Solve it in order: place notes to match the rhythm and pitches first (Check My Work will only grade the patch once the notes are right), then match OSC, CUTOFF, RESONANCE and the amp envelope by ear. Reroll for a new combination.',
+    hints: [
+      'Solve rhythm and pitch first, timbre second — trying to do both at once is how you get lost.',
+      'Once the notes pass, use the same process as Match the Patch: waveform, then filter, then envelope.',
+      'A/B constantly — play your own loop, then the target, then adjust.',
+    ],
+    drill: true,
+    centerPitch: 55,
+    visibleParams: P_FULL,
+    target: (p) => ({ params: p.patch as SynthParams, phrase: notesToPhraseSeconds(p.notes as Note[], p.bpm as number) }),
+    setup: () => {
+      const kind = rand(['bass', 'lead', 'pad'] as const)
+      const notes = kind === 'bass' ? randomBassNotes() : kind === 'lead' ? randomLeadNotes() : randomPadNotes()
+      const bpm = kind === 'bass' ? TRANSCRIBE_BASS_BPM : kind === 'lead' ? TRANSCRIBE_LEAD_BPM : TRANSCRIBE_PAD_BPM
+      const patch = basePatch({
+        osc: rand(['sine', 'triangle', 'sawtooth', 'square'] as const),
+        cutoff: rand([200, 500, 1000, 2500, 6000, 12000]),
+        resonance: rand([0.8, 2, 6, 12]),
+        attack: rand([0.005, 0.05, 0.3, 0.7]),
+        decay: rand([0.08, 0.2, 0.5]),
+        sustain: rand([0, 0.2, 0.5, 0.8]),
+        release: rand([0.1, 0.3, 0.8, 1.5]),
+      })
+      return {
+        tracks: [synthTrack('synth', 'Mystery', '#61afef', basePatch({}), [])],
+        loopBars: kind === 'pad' ? 2 : 1,
+        bpm,
+        selectedTrackId: 'synth',
+        noteLength: kind === 'bass' ? 4 : kind === 'lead' ? 2 : 16,
+        params: { notes, patch, bpm },
+      }
+    },
+    validate: (ctx) => {
+      const t = track(ctx, 'synth')
+      const noteResult = checkTranscription(t, ctx.params.notes as Note[], 'Notes locked in.')
+      if (!noteResult.pass) return noteResult
+      const target = ctx.params.patch as SynthParams
+      const scores = scorePatch(t.synth, target, ['osc', 'cutoff', 'resonance', 'attack', 'decay', 'sustain', 'release'])
+      return messageFor(
+        scores,
+        {
+          osc: 'waveform doesn\'t match',
+          cutoff: 'filter cutoff region doesn\'t match',
+          resonance: 'resonance amount doesn\'t match',
+          attack: 'attack time doesn\'t match',
+          decay: 'decay time doesn\'t match',
+          sustain: 'sustain level doesn\'t match',
+          release: 'release time doesn\'t match',
+        },
+        'Full transcription AND patch match, by ear alone — nothing was given. That is the complete producer-ear skill set.',
+      )
+    },
+  },
+]
+
 export const SOUND_MODULES: Module[] = [
   { name: SYNTH, lessons: synthLessons },
-  { name: EAR, lessons: earLessons },
+  { name: EAR, lessons: [...earLessons, ...transcribeLessons] },
 ]

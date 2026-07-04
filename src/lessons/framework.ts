@@ -384,4 +384,54 @@ export function checkExactBars(t: Track, bars: { pitches: number[]; label: strin
   return pass(successMsg)
 }
 
+// ---------- ear training: transcribe notes by listening only, no notation given ----------
+// Groups both sides by start step so single-note lines and stacked chords both work the same way:
+// each group's sorted pitch list must match exactly. Duration is intentionally not graded — the
+// skill being tested is hearing pitch + rhythmic onset, not note length.
+export function checkTranscription(t: Track, target: Note[], successMsg: string): ValidateResult {
+  if (t.notes.length === 0) return fail('The piano roll is empty — press Play Target, listen, then place notes to match what you hear.')
+  const groupByStart = (notes: Note[]) => {
+    const m = new Map<number, number[]>()
+    for (const x of notes) m.set(x.start, [...(m.get(x.start) ?? []), x.pitch])
+    return m
+  }
+  const got = groupByStart(t.notes)
+  const want = groupByStart(target)
+  const gotStarts = [...got.keys()].sort((a, b) => a - b)
+  const wantStarts = [...want.keys()].sort((a, b) => a - b)
+  if (gotStarts.length !== wantStarts.length) {
+    return fail(
+      `You have notes starting at ${gotStarts.length} different point${gotStarts.length === 1 ? '' : 's'} in time; the target has ${wantStarts.length}. Listen again and count the hits.`,
+    )
+  }
+  for (let i = 0; i < wantStarts.length; i++) {
+    if (gotStarts[i] !== wantStarts[i]) {
+      return fail(`Note ${i + 1} starts at step ${gotStarts[i]}, but the target's is at step ${wantStarts[i]} — check the rhythm.`)
+    }
+    const wp = [...want.get(wantStarts[i])!].sort((a, b) => a - b)
+    const gp = [...got.get(gotStarts[i])!].sort((a, b) => a - b)
+    if (wp.length !== gp.length) {
+      return fail(`At step ${wantStarts[i]}, the target has ${wp.length} note(s) stacked — you have ${gp.length}.`)
+    }
+    for (let j = 0; j < wp.length; j++) {
+      if (wp[j] !== gp[j]) {
+        const sameClass = ((wp[j] - gp[j]) % 12 + 12) % 12 === 0
+        return fail(
+          `At step ${wantStarts[i]}, note ${j + 1} should be ${noteName(wp[j])} — you have ${noteName(gp[j])}.` +
+            (sameClass ? ' Right note, wrong octave — shift it 12 semitones.' : ' Listen again and compare the pitch.'),
+        )
+      }
+    }
+  }
+  return pass(successMsg)
+}
+
+// Converts a note phrase (steps on the 16th-note grid) into the seconds-based phrase playTarget
+// expects. Needed for randomized drills, where the note list is generated at runtime so there's no
+// hand-written seconds array to pair it with (unlike the static matchLesson targets above).
+export function notesToPhraseSeconds(notes: Note[], bpm: number): { pitch: number; time: number; dur: number }[] {
+  const stepSec = 60 / bpm / 4
+  return notes.map((x) => ({ pitch: x.pitch, time: x.start * stepSec, dur: x.duration * stepSec * 0.9 }))
+}
+
 export { noteName }
