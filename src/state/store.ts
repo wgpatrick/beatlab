@@ -88,6 +88,9 @@ export interface AppState {
   /** Phase I: a loaded sample (if any) replacing the synthesized drum kit lane-for-lane, set
    * directly by Engine (mirrors how it already sets currentStep). */
   sampleLoaded: { name: string } | null
+  /** Phase K: master bus loudness in dBFS (via Tone.Meter), set directly by Engine once per step
+   * during playback — an approximate/instantaneous reading, not true integrated LUFS. */
+  masterLevel: number | null
 
   lesson: () => Lesson | undefined
   selectTrack: (id: string) => void
@@ -172,6 +175,7 @@ export const useStore = create<AppState>()((set, get) => ({
   quantizeStrength: 0,
   automationArm: null,
   sampleLoaded: null,
+  masterLevel: null,
 
   lesson: () => (get().mode === 'lesson' ? findLesson(get().currentLessonId) : undefined),
 

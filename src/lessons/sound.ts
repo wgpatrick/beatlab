@@ -660,6 +660,35 @@ const synthLessons: Lesson[] = [
 
 const mixingLessons: Lesson[] = [
   {
+    id: 'intro-mastering',
+    module: MIXING,
+    title: 'Mastering: Leave Headroom',
+    summary:
+      'The master bus (every track, summed) runs through a limiter — a safety net that stops the mix from ever clipping, no matter what. But leaning on it for loudness instead of getting good levels upstream causes audible pumping and squashed dynamics. The fix is boring and correct: leave headroom. Watch the MASTER meter in the transport bar — it should read comfortably, not stay slammed red.',
+    task: 'These three tracks are all mixed too hot. Pull every VOLUME down to -6dB or quieter, then press play and confirm the MASTER meter stays out of the red.',
+    hints: [
+      'A limiter working overtime (meter pinned near its ceiling) is a mixing problem to fix, not something to leave for the master bus to handle.',
+      'This isn\'t a real LUFS/loudness-standard reading — it\'s a simple instantaneous level meter — but the underlying habit (leave headroom, don\'t lean on the limiter) is the real, transferable skill.',
+    ],
+    centerPitch: 60,
+    visibleParams: P_MIX,
+    setup: () => ({
+      tracks: [
+        synthTrack('bass', 'Bass', '#56b6c2', { osc: 'sawtooth', cutoff: 900, attack: 0.005, decay: 0.2, sustain: 0.6, release: 0.15, volume: -1 }, riffOneBar(33)),
+        synthTrack('chords', 'Chords', '#f7c948', { osc: 'triangle', cutoff: 4000, attack: 0.3, decay: 0.3, sustain: 0.7, release: 1.0, volume: -1 }, [n(57, 0, 16), n(60, 0, 16), n(64, 0, 16)]),
+        synthTrack('lead', 'Lead', '#c678dd', { osc: 'square', cutoff: 6000, attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.3, volume: -1 }, riffOneBar(64)),
+      ],
+      loopBars: 1,
+      bpm: 120,
+      selectedTrackId: 'bass',
+    }),
+    validate: (ctx) => {
+      const loud = ctx.tracks.filter((t) => t.kind === 'synth' && t.synth.volume > -6)
+      if (loud.length) return fail(`${loud.map((t) => t.name).join(', ')} still above -6dB — pull volume down to leave headroom for the limiter.`)
+      return pass('Every track has real headroom now — the limiter barely has to work, which is the actual point: get good levels upstream instead of leaning on a safety net.')
+    },
+  },
+  {
     id: 'intro-eq',
     module: MIXING,
     title: 'EQ: Carving Space',

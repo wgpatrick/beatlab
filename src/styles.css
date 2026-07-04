@@ -124,6 +124,30 @@ button {
   color: var(--red);
 }
 
+.master-meter-label {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--dim);
+}
+.master-meter {
+  width: 60px;
+  height: 8px;
+  background: #101010;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.master-meter-fill {
+  height: 100%;
+  transition: width 80ms linear;
+}
+.master-meter-value {
+  font-size: 10px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+}
+
 .bpm-label {
   display: flex;
   align-items: center;

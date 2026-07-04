@@ -23,6 +23,7 @@ export function TransportBar() {
   const toggleRecording = useStore((s) => s.toggleRecording)
   const quantizeStrength = useStore((s) => s.quantizeStrength)
   const setQuantizeStrength = useStore((s) => s.setQuantizeStrength)
+  const masterLevel = useStore((s) => s.masterLevel)
 
   const bar = currentStep >= 0 ? Math.floor(currentStep / 16) + 1 : 1
   const beat = currentStep >= 0 ? Math.floor((currentStep % 16) / 4) + 1 : 1
@@ -107,6 +108,19 @@ export function TransportBar() {
           </button>
         )}
         {midi.error && <span className="midi-status midi-error">{midi.error}</span>}
+      </div>
+      <div className="transport-group" title="Master bus level (approximate, instantaneous dBFS via a limiter+meter — not true integrated LUFS)">
+        <span className="master-meter-label">MASTER</span>
+        <div className="master-meter">
+          <div
+            className="master-meter-fill"
+            style={{
+              width: `${Math.max(0, Math.min(100, ((masterLevel ?? -60) + 60) * (100 / 60)))}%`,
+              background: masterLevel !== null && masterLevel > -1 ? 'var(--red)' : 'var(--green)',
+            }}
+          />
+        </div>
+        <span className="master-meter-value">{masterLevel !== null ? `${masterLevel.toFixed(1)}dB` : '—'}</span>
       </div>
       <div className="transport-group">
         <button className="tbtn" title="Undo (Ctrl/Cmd+Z)" disabled={!past.length} onClick={undo}>

@@ -97,6 +97,22 @@ class Engine {
   private samplePlayers: Partial<Record<DrumLane, Tone.Player>> = {}
   private sampleGains: Partial<Record<DrumLane, Tone.Gain>> = {}
   private sampleSlices: Partial<Record<DrumLane, SampleSlice>> = {}
+  // Phase K: everything that used to connect straight to Tone.getDestination() now connects here
+  // instead — a shared master bus feeding a limiter (safety ceiling, not user-adjustable) and a
+  // meter (read once per step in tick(), pushed to the store for the UI's loudness readout).
+  private masterBus: Tone.Gain | null = null
+  private masterLimiter: Tone.Limiter | null = null
+  private masterMeter: Tone.Meter | null = null
+
+  private getMaster(): Tone.Gain {
+    if (!this.masterBus) {
+      this.masterBus = new Tone.Gain(1)
+      this.masterLimiter = new Tone.Limiter(-1)
+      this.masterMeter = new Tone.Meter({ smoothing: 0.8 })
+      this.masterBus.chain(this.masterLimiter, this.masterMeter, Tone.getDestination())
+    }
+    return this.masterBus
+  }
 
   // Pre-existing race, found via Phase J's capstone lesson testing: toggleDrum/addNote fire their
   // preview sound without awaiting it (`void engine.previewDrum(...)`), so rapidly programming
@@ -123,12 +139,12 @@ class Engine {
   // the audio context starts, they just won't produce sound until it does.
   private getBuses() {
     if (!this.reverbBus) {
-      this.reverbBus = new Tone.Reverb({ decay: 2.2, wet: 1 }).toDestination()
-      this.delayBus = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.3, wet: 1 }).toDestination()
+      this.reverbBus = new Tone.Reverb({ decay: 2.2, wet: 1 }).connect(this.getMaster())
+      this.delayBus = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.3, wet: 1 }).connect(this.getMaster())
       // series, not parallel: chorus feeds into phaser, only the phaser's output reaches the
       // destination — otherwise the chorus-only signal would double up alongside the phased one.
       this.chorusBus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, wet: 1 }).start()
-      this.phaserBus = new Tone.Phaser({ frequency: 0.5, octaves: 3, baseFrequency: 1000, wet: 1 }).toDestination()
+      this.phaserBus = new Tone.Phaser({ frequency: 0.5, octaves: 3, baseFrequency: 1000, wet: 1 }).connect(this.getMaster())
       this.chorusBus.connect(this.phaserBus)
     }
     return { reverb: this.reverbBus, delay: this.delayBus!, mod: this.chorusBus! }
@@ -139,17 +155,17 @@ class Engine {
       pitchDecay: 0.05,
       octaves: 7,
       envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.1 },
-    }).toDestination()
+    }).connect(this.getMaster())
     kick.volume.value = -2
 
-    const snareFilter = new Tone.Filter(1800, 'highpass').toDestination()
+    const snareFilter = new Tone.Filter(1800, 'highpass').connect(this.getMaster())
     const snare = new Tone.NoiseSynth({
       noise: { type: 'white' },
       envelope: { attack: 0.001, decay: 0.13, sustain: 0 },
     }).connect(snareFilter)
     snare.volume.value = -8
 
-    const clapFilter = new Tone.Filter(1100, 'bandpass').toDestination()
+    const clapFilter = new Tone.Filter(1100, 'bandpass').connect(this.getMaster())
     clapFilter.Q.value = 1.2
     const clap = new Tone.NoiseSynth({
       noise: { type: 'pink' },
@@ -163,7 +179,7 @@ class Engine {
       modulationIndex: 32,
       resonance: 4000,
       octaves: 1.5,
-    }).toDestination()
+    }).connect(this.getMaster())
     hat.volume.value = -18
 
     const openhat = new Tone.MetalSynth({
@@ -172,7 +188,7 @@ class Engine {
       modulationIndex: 32,
       resonance: 4000,
       octaves: 1.5,
-    }).toDestination()
+    }).connect(this.getMaster())
     openhat.volume.value = -20
 
     this.drums = { kick, snare, clap, hat, openhat }
@@ -190,7 +206,7 @@ class Engine {
     const sliceLen = buffer.duration / DRUM_LANES.length
     for (let i = 0; i < DRUM_LANES.length; i++) {
       const lane = DRUM_LANES[i]
-      const gain = new Tone.Gain(1).toDestination()
+      const gain = new Tone.Gain(1).connect(this.getMaster())
       const player = new Tone.Player(this.sampleBuffer).connect(gain)
       this.samplePlayers[lane] = player
       this.sampleGains[lane] = gain
@@ -319,7 +335,7 @@ class Engine {
       // Distortion -> bitcrusher fixed sub-chain (only the three slots as a block reorder).
       distortion.connect(bitcrush)
 
-      panner.chain(vol, Tone.getDestination())
+      panner.chain(vol, this.getMaster())
       panner.connect(reverbSend)
       reverbSend.connect(reverb)
       panner.connect(delaySend)
@@ -713,7 +729,7 @@ class Engine {
     }
 
     Tone.getDraw().schedule(() => {
-      useStore.setState({ currentStep: step })
+      useStore.setState({ currentStep: step, masterLevel: this.masterMeter?.getValue() as number | undefined })
     }, time)
   }
 
@@ -746,7 +762,7 @@ class Engine {
     osc2.chain(osc2Gain, filter)
     sub.chain(subGain, filter)
     noise.chain(noiseGain, filter)
-    filter.chain(vol, Tone.getDestination())
+    filter.chain(vol, this.getMaster())
 
     // LFO/filter-envelope here are sampled once per phrase note (there's no transport tick loop
     // driving a one-shot preview like this) — same tradeoff as the main tick(), just at phrase-note
