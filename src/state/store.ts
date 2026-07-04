@@ -625,6 +625,19 @@ export const useStore = create<AppState>()((set, get) => ({
 
   connectMidi: async () => {
     midiInput.setHandlers({ onNoteOn: handleMidiNoteOn, onNoteOff: handleMidiNoteOff })
+    // Refreshes the UI live if a keyboard shows up *after* this connect() call already resolved
+    // (e.g. plugged in a moment after clicking Connect MIDI with none attached yet) — Web MIDI's
+    // own onstatechange event still fires post-grant, midi.ts just didn't used to forward it here.
+    midiInput.setOnDevicesChanged((devices) => {
+      set({
+        midi: {
+          supported: midiInput.supported,
+          connected: devices.length > 0,
+          deviceName: devices[0]?.name ?? null,
+          error: devices.length ? null : 'No MIDI devices found — plug in a keyboard and reconnect.',
+        },
+      })
+    })
     try {
       const devices = await midiInput.connect()
       set({

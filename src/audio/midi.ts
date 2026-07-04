@@ -23,16 +23,25 @@ class MidiInput {
   private access: MIDIAccess | null = null
   private handlers: MidiHandlers | null = null
   private connectedInputs: MIDIInput[] = []
+  private onDevicesChanged: ((devices: MidiDeviceInfo[]) => void) | null = null
 
   setHandlers(handlers: MidiHandlers) {
     this.handlers = handlers
+  }
+
+  /** Called with the current device list every time it changes — including *after* connect()
+   * has already resolved. Web MIDI's own onstatechange event (below) fires when a keyboard is
+   * plugged in after the initial permission grant, e.g. someone clicks Connect MIDI first and
+   * plugs the keyboard in a moment later; without this, the UI would be stuck showing "no
+   * devices found" forever even once one shows up. */
+  setOnDevicesChanged(cb: (devices: MidiDeviceInfo[]) => void) {
+    this.onDevicesChanged = cb
   }
 
   async connect(): Promise<MidiDeviceInfo[]> {
     if (!this.supported) throw new Error('Web MIDI API not supported in this browser')
     this.access = await navigator.requestMIDIAccess()
     this.attachToInputs()
-    // devices can be plugged in after the initial permission grant
     this.access.onstatechange = () => this.attachToInputs()
     return this.listDevices()
   }
@@ -47,6 +56,7 @@ class MidiInput {
     for (const input of this.connectedInputs) {
       input.onmidimessage = (e: MIDIMessageEvent) => this.handleMessage(e.data)
     }
+    this.onDevicesChanged?.(this.listDevices())
   }
 
   /** Test/dev hook: pushes a raw MIDI message (e.g. `[0x90, 60, 100]` = note-on, middle C,
