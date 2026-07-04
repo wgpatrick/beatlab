@@ -84,6 +84,7 @@ class Engine {
   private drums: DrumKit | null = null
   private repeatId: number | null = null
   private ready = false
+  private startPromise: Promise<void> | null = null
   // shared mixer return buses — every synth chain's reverb/delay send taps into these, matching
   // the "one shared reverb + one shared delay return" minimal mixer every DAW tutorial starts with
   private reverbBus: Tone.Reverb | null = null
@@ -97,12 +98,24 @@ class Engine {
   private sampleGains: Partial<Record<DrumLane, Tone.Gain>> = {}
   private sampleSlices: Partial<Record<DrumLane, SampleSlice>> = {}
 
+  // Pre-existing race, found via Phase J's capstone lesson testing: toggleDrum/addNote fire their
+  // preview sound without awaiting it (`void engine.previewDrum(...)`), so rapidly programming
+  // several different drum lanes before ever pressing Play — a plausible first interaction with a
+  // lesson — could fire this concurrently many times while `ready` was still false, racing
+  // multiple `Tone.start()` + `buildDrums()` calls and corrupting the shared kit's scheduling
+  // state ("Start time must be strictly greater than previous start time"). Guarding with a single
+  // in-flight promise makes every concurrent caller await the same one-time startup instead.
   async ensureStarted() {
     if (this.ready) return
-    await Tone.start()
-    this.buildDrums()
-    Tone.getDestination().volume.value = -2
-    this.ready = true
+    if (!this.startPromise) {
+      this.startPromise = (async () => {
+        await Tone.start()
+        this.buildDrums()
+        Tone.getDestination().volume.value = -2
+        this.ready = true
+      })()
+    }
+    await this.startPromise
   }
 
   // Lazy on purpose: ensureChain (via sync()) can run before the user has interacted with the
@@ -206,7 +219,23 @@ class Engine {
     useStore.setState({ sampleLoaded: null })
   }
 
+  // Preview clock, monotonically increasing across calls regardless of lane/instrument. Found via
+  // Phase J's capstone lesson testing: previewDrum passes time=undefined ("right now"), and the
+  // kick/snare/clap/hat/openhat voices are each a single (non-polyphonic) instance — rapidly
+  // programming several different lanes before ever pressing Play (toggleDrum fires an unawaited
+  // preview per click) can call the *same* instrument's triggerAttackRelease more than once within
+  // one JS tick, all resolving to the same underlying audio-clock "now" and violating Tone.js's
+  // per-instrument monotonically-increasing-start-time invariant. Explicitly bumping each preview
+  // at least ~5ms past the last one sidesteps that without audibly delaying anything.
+  private lastPreviewTime = 0
+  private nextPreviewTime(): number {
+    const t = Math.max(Tone.now(), this.lastPreviewTime + 0.005)
+    this.lastPreviewTime = t
+    return t
+  }
+
   triggerDrum(lane: DrumLane, time?: number, velocity = 1) {
+    const t = time ?? this.nextPreviewTime()
     const slice = this.sampleSlices[lane]
     const player = this.samplePlayers[lane]
     if (slice && player) {
@@ -214,25 +243,25 @@ class Engine {
       // envelope — Tone.Player has no built-in velocity concept, and re-creating one for a single
       // shared player per lane isn't worth it for a step-resolution teaching engine.
       this.sampleGains[lane]!.gain.value = velocity
-      player.start(time, slice.start, slice.dur)
+      player.start(t, slice.start, slice.dur)
       return
     }
     if (!this.drums) return
     switch (lane) {
       case 'kick':
-        this.drums.kick.triggerAttackRelease('C1', '8n', time, velocity)
+        this.drums.kick.triggerAttackRelease('C1', '8n', t, velocity)
         break
       case 'snare':
-        this.drums.snare.triggerAttackRelease('8n', time, velocity)
+        this.drums.snare.triggerAttackRelease('8n', t, velocity)
         break
       case 'clap':
-        this.drums.clap.triggerAttackRelease('8n', time, velocity)
+        this.drums.clap.triggerAttackRelease('8n', t, velocity)
         break
       case 'hat':
-        this.drums.hat.triggerAttackRelease(300, '32n', time, velocity)
+        this.drums.hat.triggerAttackRelease(300, '32n', t, velocity)
         break
       case 'openhat':
-        this.drums.openhat.triggerAttackRelease(300, '16n', time, velocity)
+        this.drums.openhat.triggerAttackRelease(300, '16n', t, velocity)
         break
     }
   }

@@ -1,19 +1,22 @@
-import { DEFAULT_SYNTH, type Note, type OscType, type SynthParams } from '../types'
+import { DEFAULT_SYNTH, DRUM_LANES, type DrumLane, type Note, type OscType, type SynthParams, type Track } from '../types'
 import {
   CHORD_VOICINGS,
   checkTranscription,
   chordProgressionNotes,
   drumTrack,
   fail,
+  laneSteps,
   n,
   notesToPhraseSeconds,
   pass,
   rand,
   riffOneBar,
+  sameSet,
   scorePatch,
   scoreSummary,
   synthTrack,
   track,
+  type DrumHit,
   type Lesson,
   type Module,
   type ParamStatus,
@@ -1317,6 +1320,31 @@ const randomBassNotes = () => [0, 4, 8, 12].map((s) => n(rand(TRANSCRIBE_BASS_PO
 const randomLeadNotes = () => [0, 2, 4, 6, 8, 10, 12, 14].map((s) => n(rand(TRANSCRIBE_LEAD_POOL), s, 2))
 const randomPadNotes = () => [0, 1].flatMap((bar) => rand(CHORD_VOICINGS).map((p) => n(p, bar * 16, 16)))
 
+// ---------- Phase J: capstone (drums + bassline notes + bassline patch, chained) ----------
+const CAPSTONE_BPM = 122
+const CAPSTONE_DRUM_HITS: DrumHit[] = [
+  { lane: 'kick', step: 0 }, { lane: 'kick', step: 4 }, { lane: 'kick', step: 8 }, { lane: 'kick', step: 12 },
+  { lane: 'clap', step: 4 }, { lane: 'clap', step: 12 },
+  { lane: 'hat', step: 2 }, { lane: 'hat', step: 6 }, { lane: 'hat', step: 10 }, { lane: 'hat', step: 14 },
+]
+const CAPSTONE_BASS_NOTES = riffOneBar(33)
+const CAPSTONE_BASS_PATCH = basePatch({ osc: 'sawtooth', cutoff: 900, resonance: 1.5, attack: 0.005, decay: 0.2, sustain: 0.4, release: 0.15, volume: -8 })
+
+function checkDrumHits(t: Track, hits: DrumHit[]): string | null {
+  const wanted: Partial<Record<DrumLane, number[]>> = {}
+  for (const h of hits) wanted[h.lane] = [...(wanted[h.lane] ?? []), h.step]
+  for (const lane of DRUM_LANES) {
+    const want = wanted[lane] ?? []
+    const got = laneSteps(t, lane)
+    if (!sameSet(got, want)) {
+      return want.length === 0
+        ? `${lane} lane should be empty, but you have hits there.`
+        : `${lane} lane doesn't match — need hits on steps ${want.map((s) => s + 1).join(', ')}.`
+    }
+  }
+  return null
+}
+
 const transcribeLessons: Lesson[] = [
   {
     id: 'transcribe-bassline',
@@ -1467,6 +1495,49 @@ const transcribeLessons: Lesson[] = [
           release: 'release time doesn\'t match',
         },
         'Full transcription AND patch match, by ear alone — nothing was given. That is the complete producer-ear skill set.',
+      )
+    },
+  },
+  {
+    id: 'capstone-house-groove',
+    module: EAR,
+    title: 'Capstone: Recreate the Groove',
+    summary:
+      'Every skill in this module, chained together into one reference groove: a drum pattern, then a bassline\'s notes, then the bassline\'s patch. This is the actual shape of producing a track by ear — get the drums locked before touching the bassline, get the bassline\'s notes right before worrying about its sound. Each stage below only grades once the one before it passes.',
+    task: 'PLAY TARGET BEAT for the drum pattern and PLAY TARGET SOUND for the bassline. Solve in order: (1) program the matching drum pattern, (2) transcribe the bassline\'s notes, (3) match its patch by ear.',
+    hints: [
+      'Check My Work always tells you which stage is still wrong — solve them strictly in order.',
+      'Stage 1 is a standard four-on-the-floor groove: kick on every beat, clap backbeat, offbeat hats — every piece from the Drum Programming module.',
+      'Stages 2 and 3 are exactly Transcribe the Bassline followed by Match the Patch, just chained into one lesson instead of two.',
+    ],
+    drumTarget: CAPSTONE_DRUM_HITS,
+    target: { params: CAPSTONE_BASS_PATCH, phrase: notesToPhraseSeconds(CAPSTONE_BASS_NOTES, CAPSTONE_BPM) },
+    centerPitch: 40,
+    visibleParams: P_FULL,
+    setup: () => ({
+      tracks: [drumTrack(), synthTrack('bass', 'Bass', '#56b6c2', basePatch({}), [])],
+      loopBars: 1,
+      bpm: CAPSTONE_BPM,
+      selectedTrackId: 'drums',
+    }),
+    validate: (ctx) => {
+      const drums = track(ctx, 'drums')
+      const drumIssue = checkDrumHits(drums, CAPSTONE_DRUM_HITS)
+      if (drumIssue) return fail(`Stage 1/3 (drums): ${drumIssue}`)
+
+      const bass = track(ctx, 'bass')
+      const noteResult = checkTranscription(bass, CAPSTONE_BASS_NOTES, '')
+      if (!noteResult.pass) return fail(`Stage 2/3 (bassline notes): ${noteResult.message}`)
+
+      const scores = scorePatch(bass.synth, CAPSTONE_BASS_PATCH, ['osc', 'cutoff', 'resonance', 'attack', 'decay', 'sustain', 'release'])
+      const summary = scoreSummary(scores)
+      if (!summary.allGood) {
+        const wrongKeys = (Object.entries(scores) as [keyof SynthParams, ParamStatus][]).filter(([, v]) => v === 'wrong').map(([k]) => k)
+        return fail(`Stage 3/3 (bassline sound): getting closer — ${wrongKeys.join(', ')} still off.`, scores)
+      }
+      return pass(
+        'All three stages passed — drums, bassline notes, and bassline sound. The whole groove, rebuilt by ear in stages, exactly how a real production actually gets built.',
+        scores,
       )
     },
   },
