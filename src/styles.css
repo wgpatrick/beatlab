@@ -1038,6 +1038,15 @@ button.seq-label:hover {
   margin-bottom: 8px;
 }
 
+.automation-param-select {
+  background: var(--panel3);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
 .device-note {
   padding: 24px 16px;
   color: var(--dim);

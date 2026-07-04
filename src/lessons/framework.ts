@@ -62,6 +62,9 @@ const PARAM_TOLERANCE: Partial<Record<keyof SynthParams, Tolerance>> = {
   bitcrushMix: { tight: 0.15, loose: 0.35 },
   sendMod: { tight: 0.1, loose: 0.3 },
   duckAmount: { tight: 0.15, loose: 0.35 },
+  lfo2Rate: { tight: 0.3, loose: 0.7, log: true },
+  lfo2Depth: { tight: 0.15, loose: 0.35 },
+  macroValue: { tight: 0.15, loose: 0.35 },
 }
 
 // string-typed params (osc, filterType, osc2Type, lfoDest, ...) score as an exact match; numeric

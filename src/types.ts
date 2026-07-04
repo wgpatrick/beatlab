@@ -1,6 +1,11 @@
 export type OscType = 'sine' | 'triangle' | 'sawtooth' | 'square'
 export type FilterType = 'lowpass' | 'bandpass' | 'highpass'
 export type LfoDest = 'off' | 'pitch' | 'cutoff' | 'amp'
+// Phase F: LFO 2's destination list is deliberately disjoint from the original LFO's (pitch/
+// cutoff/amp) — a second, independent modulation route rather than a shared matrix data
+// structure, so it adds real "more than one simultaneous mod route" capability without touching
+// lfoDest's existing meaning (~10 Phase A-D lessons grade lfoDest/lfoRate/lfoDepth directly).
+export type Lfo2Dest = 'off' | 'pan' | 'sendReverb' | 'sendDelay' | 'sendMod' | 'eqLow' | 'eqMid' | 'eqHigh' | 'distortionMix'
 // Phase E: the three reorderable insert-effect slots between the filter and the panner. 'dist'
 // is distortion chained into bitcrusher internally (a fixed sub-order) — only the three slots as
 // a block are reorderable, matching the roadmap's "EQ -> compressor -> distortion" default chain.
@@ -63,6 +68,14 @@ export interface SynthParams {
   // pattern data the same way the filter envelope is.
   duckSource: string | null // another track's id, or null = off
   duckAmount: number // 0..1
+
+  // ---------- Phase F: modulation matrix expansion (LFO 2) + macro ----------
+  lfo2Rate: number // Hz
+  lfo2Depth: number // 0..1
+  lfo2Dest: Lfo2Dest
+  // Fixed single macro (not a user-remappable target list — see docs/ROADMAP.md Phase F item 30
+  // for the scoping note): one knob drives cutoff, reverb send, and distortion mix together.
+  macroValue: number // 0..1
 }
 
 export interface Note {
@@ -87,6 +100,16 @@ export const DRUM_LABELS: Record<DrumLane, string> = {
 // 0 = off, otherwise the step's velocity (0..1] — a step sequencer "accent" cycle
 export type DrumPattern = Record<DrumLane, number[]>
 
+// Phase F: which SynthParams it makes sense to draw a breakpoint automation lane for — numeric,
+// continuously variable, audible when swept. Excludes string/enum fields (osc, filterType,
+// lfoDest...) and structural fields (insertOrder, duckSource) that have no meaningful "in-between".
+export const AUTOMATABLE_PARAMS = [
+  'cutoff', 'resonance', 'volume', 'pan', 'sendReverb', 'sendDelay', 'sendMod',
+  'eqLow', 'eqMid', 'eqHigh', 'compMix', 'distortionMix', 'bitcrushMix', 'duckAmount',
+] as const
+export type AutomatableParam = (typeof AUTOMATABLE_PARAMS)[number]
+export type AutomationMap = Partial<Record<AutomatableParam, AutomationPoint[]>>
+
 export interface Track {
   id: string
   name: string
@@ -100,15 +123,22 @@ export interface Track {
    * A clip is a named snapshot: saving copies the live notes/pattern in, loading copies them
    * back out. Combined with Scene below this is BeatLab's Session-View analog. */
   clips: Clip[]
-  /** Optional filter-cutoff breakpoint envelope over the loop (synth tracks only). Undefined =
-   * cutoff stays at the static SynthParams.cutoff value, as before. */
-  cutoffAutomation?: AutomationPoint[]
+  /** Optional breakpoint automation over the loop (synth tracks only), one lane per automated
+   * param. Undefined/missing key = that param stays at its static SynthParams value, as before —
+   * this generalizes what was a single cutoff-only lane (Phase C) to any AutomatableParam
+   * (Phase F), including live "touch" capture — see automationArm in state/store.ts. */
+  automation?: AutomationMap
 }
 
-/** time: 0..1 fraction of the way through the loop. value: filter cutoff in Hz. */
+/** time: 0..1 fraction of the way through the loop. curve: shape of the segment FROM this point
+ * to the next — 'ramp' (default) interpolates smoothly (log-space for cutoff, linear otherwise),
+ * 'hold' steps abruptly at the next point instead, for stab-like automated changes rather than
+ * sweeps. */
+export type AutomationCurve = 'ramp' | 'hold'
 export interface AutomationPoint {
   time: number
   value: number
+  curve?: AutomationCurve
 }
 
 export interface Clip {
@@ -116,6 +146,11 @@ export interface Clip {
   name: string
   notes: Note[]
   pattern: DrumPattern
+  /** Phase F: automation travels with the clip, same save-in/load-out snapshot model as
+   * notes/pattern — this is what makes "clip-level" vs "arrangement-level" automation a real
+   * distinction: a clip's sweep comes along when it's duplicated/rearranged, instead of being
+   * fixed to one timeline position. */
+  automation?: AutomationMap
 }
 
 export interface Scene {
@@ -192,4 +227,8 @@ export const DEFAULT_SYNTH: SynthParams = {
   sendMod: 0,
   duckSource: null,
   duckAmount: 0,
+  lfo2Rate: 3,
+  lfo2Depth: 0,
+  lfo2Dest: 'off',
+  macroValue: 0,
 }

@@ -1,4 +1,4 @@
-import type { SectionType } from '../types'
+import type { AutomationPoint, SectionType } from '../types'
 import {
   GROOVE_STEPS,
   bassGrooveNotes,
@@ -6,8 +6,10 @@ import {
   drumTrack,
   fail,
   melodyNotes,
+  n,
   pass,
   synthTrack,
+  track,
   type Lesson,
   type Module,
 } from './framework'
@@ -184,6 +186,51 @@ const arrangeLessons: Lesson[] = [
       if (c[6] !== 4) return fail(`Final Drop: everything in (has ${c[6]}).`)
       if (c[7] > 2) return fail(`Outro: wind down to 1–2 elements (has ${c[7]}).`)
       return pass('A complete track arc, designed and audible. You\'ve done the full loop: theory → sound → rhythm → arrangement. The Sandbox is your studio now.')
+    },
+  },
+  {
+    id: 'micro-buildup',
+    module: ARRANGE,
+    title: 'The Micro Buildup: Automation',
+    summary:
+      'The energy-curve lessons so far are macro arrangement — deciding which whole elements play in which section. A buildup also happens on a much smaller scale: WITHIN one loop, a filter opening up, volume climbing, reverb growing — automation is what makes a section feel like it\'s climbing, not just repeating.',
+    task: 'On this pad, automate CUTOFF to sweep from closed to fully open, VOLUME to rise, and REVERB SEND to grow — each starting near the beginning of the loop and ending near the end.',
+    hints: [
+      'Open the automation lane below the piano roll, pick a parameter from the dropdown, then click to place breakpoints — one low near bar 1, one high near the last bar.',
+      'This is exactly the mechanic Phase C added for cutoff alone — now it works for any of these parameters.',
+      'A real 8/16-bar club buildup is this same idea, just stretched over a whole section instead of one loop.',
+    ],
+    centerPitch: 60,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Buildup Pad', '#61afef', { osc: 'sawtooth', cutoff: 300, sendReverb: 0, volume: -24 }, [
+        n(57, 0, 32), n(60, 0, 32), n(64, 0, 32),
+        n(57, 32, 32), n(60, 32, 32), n(64, 32, 32),
+      ])],
+      loopBars: 8,
+      bpm: 126,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const t = track(ctx, 'synth')
+      const auto = t.automation ?? {}
+      const endsHigh = (points: AutomationPoint[] | undefined) => {
+        if (!points || points.length < 2) return null
+        const sorted = [...points].sort((a, b) => a.time - b.time)
+        return { first: sorted[0], last: sorted[sorted.length - 1] }
+      }
+      const cutoffEnds = endsHigh(auto.cutoff)
+      const volEnds = endsHigh(auto.volume)
+      const reverbEnds = endsHigh(auto.sendReverb)
+      if (!cutoffEnds) return fail('No cutoff automation yet — open the automation lane, pick Cutoff, and place at least two breakpoints.')
+      if (cutoffEnds.first.time > 0.25 || cutoffEnds.last.time < 0.75)
+        return fail('Spread the cutoff sweep across the whole loop — first point near the start, last point near the end.')
+      if (cutoffEnds.last.value / Math.max(cutoffEnds.first.value, 1) < 4)
+        return fail('The cutoff needs to open up a lot more — at least a ~2-octave rise from start to end.')
+      if (!volEnds) return fail('No volume automation yet — add a rising volume lane too.')
+      if (volEnds.last.value - volEnds.first.value < 10) return fail('Volume should climb at least 10dB across the buildup.')
+      if (!reverbEnds) return fail('No reverb send automation yet — add a growing reverb lane too.')
+      if (reverbEnds.last.value - reverbEnds.first.value < 0.3) return fail('Reverb send should grow by at least 30% across the buildup.')
+      return pass('Three lanes rising together — filter opening, volume climbing, reverb swelling. That combination, stretched across a real section, is what a club buildup actually is.')
     },
   },
 ]

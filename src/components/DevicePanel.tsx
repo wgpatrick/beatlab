@@ -1,4 +1,4 @@
-import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type LfoDest, type OscType, type SynthParams, type Track } from '../types'
+import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SynthParams, type Track } from '../types'
 import { engine } from '../audio/engine'
 import { useStore } from '../state/store'
 import { Knob } from './Knob'
@@ -24,6 +24,18 @@ const LFO_DESTS: { dest: LfoDest; label: string }[] = [
   { dest: 'amp', label: 'Amp' },
 ]
 
+const LFO2_DESTS: { dest: Lfo2Dest; label: string }[] = [
+  { dest: 'off', label: 'Off' },
+  { dest: 'pan', label: 'Pan' },
+  { dest: 'sendReverb', label: 'Reverb' },
+  { dest: 'sendDelay', label: 'Delay' },
+  { dest: 'sendMod', label: 'Mod FX' },
+  { dest: 'eqLow', label: 'EQ Low' },
+  { dest: 'eqMid', label: 'EQ Mid' },
+  { dest: 'eqHigh', label: 'EQ High' },
+  { dest: 'distortionMix', label: 'Dist Mix' },
+]
+
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`)
 const ms = (v: number) => (v >= 1 ? `${v.toFixed(1)}s` : `${Math.round(v * 1000)}ms`)
 const pct = (v: number) => `${Math.round(v * 100)}%`
@@ -36,6 +48,7 @@ const INSERT_LABELS: Record<InsertKind, string> = { eq: 'EQ', comp: 'COMP', dist
 
 export function DevicePanel({ track }: { track: Track }) {
   const setSynth = useStore((s) => s.setSynth)
+  const setMacroValue = useStore((s) => s.setMacroValue)
   const lesson = useStore((s) => s.lesson())
   const paramScores = useStore((s) => s.paramScores)
   const allTracks = useStore((s) => s.tracks)
@@ -81,6 +94,8 @@ export function DevicePanel({ track }: { track: Track }) {
   const showModSend = visible('sendMod')
   const showSidechain = visible('duckSource') || visible('duckAmount')
   const duckSourceOptions = allTracks.filter((t) => t.kind === 'drums' && t.id !== track.id)
+  const showLfo2 = visible('lfo2Rate') || visible('lfo2Depth') || visible('lfo2Dest')
+  const showMacro = visible('macroValue')
 
   const swapInsertOrder = (i: number) => {
     const next = [...p.insertOrder]
@@ -236,6 +251,47 @@ export function DevicePanel({ track }: { track: Track }) {
             {visible('lfoDepth') && (
               <Knob label="Depth" value={p.lfoDepth} min={0} max={1} format={pct} status={statusOf('lfoDepth')} onChange={(v) => set({ lfoDepth: v })} />
             )}
+          </div>
+        </div>
+      )}
+      {showLfo2 && (
+        <div className="device-section">
+          <div className="device-section-title">LFO 2</div>
+          {visible('lfo2Dest') && (
+            <select className="duck-source-select" value={p.lfo2Dest} onChange={(e) => set({ lfo2Dest: e.target.value as Lfo2Dest })}>
+              {LFO2_DESTS.map((d) => (
+                <option key={d.dest} value={d.dest}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="knob-row">
+            {visible('lfo2Rate') && (
+              <Knob label="Rate" value={p.lfo2Rate} min={0.05} max={20} log format={(v) => `${v.toFixed(v < 1 ? 2 : 1)}Hz`} status={statusOf('lfo2Rate')} onChange={(v) => set({ lfo2Rate: v })} />
+            )}
+            {visible('lfo2Depth') && (
+              <Knob label="Depth" value={p.lfo2Depth} min={0} max={1} format={pct} status={statusOf('lfo2Depth')} onChange={(v) => set({ lfo2Depth: v })} />
+            )}
+          </div>
+        </div>
+      )}
+      {showMacro && (
+        <div className="device-section">
+          <div className="device-section-title">MACRO</div>
+          <div className="knob-row">
+            <Knob
+              label="Intensity"
+              value={p.macroValue}
+              min={0}
+              max={1}
+              format={pct}
+              status={statusOf('macroValue')}
+              onChange={(v) => setMacroValue(track.id, v)}
+            />
+          </div>
+          <div className="device-note" style={{ padding: '8px 0 0' }}>
+            One knob → cutoff, reverb send, and distortion mix together.
           </div>
         </div>
       )}

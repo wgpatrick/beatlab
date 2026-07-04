@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ArrangementState, DrumLane, DrumPattern, Note, Scene, SectionType, SynthParams, Track } from '../types'
+import type { ArrangementState, AutomatableParam, AutomationCurve, DrumLane, DrumPattern, Note, Scene, SectionType, SynthParams, Track } from '../types'
 import { engine } from '../audio/engine'
 import { midiInput } from '../audio/midi'
 import { handleMidiNoteOff, handleMidiNoteOn, releaseAllHeld } from '../audio/midiRecorder'
@@ -81,6 +81,10 @@ export interface AppState {
   midi: { supported: boolean; connected: boolean; deviceName: string | null; error: string | null }
   isRecording: boolean
   quantizeStrength: number
+  /** Phase F: which track+param, if any, is armed for live automation-touch recording. While set
+   * and isRecording+isPlaying are both true, Engine.tick() samples that param's current value
+   * once per step into its automation lane — the same REC button Phase G uses for MIDI notes. */
+  automationArm: { trackId: string; param: AutomatableParam } | null
 
   lesson: () => Lesson | undefined
   selectTrack: (id: string) => void
@@ -115,9 +119,12 @@ export interface AppState {
   deleteScene: (sceneId: string) => void
   assignSceneClip: (sceneId: string, trackId: string, clipId: string | null) => void
   triggerScene: (sceneId: string) => void
-  setAutomationPoint: (trackId: string, time: number, value: number) => void
-  removeAutomationPoint: (trackId: string, time: number) => void
-  clearAutomation: (trackId: string) => void
+  setAutomationPoint: (trackId: string, param: AutomatableParam, time: number, value: number, curve?: AutomationCurve) => void
+  removeAutomationPoint: (trackId: string, param: AutomatableParam, time: number) => void
+  clearAutomation: (trackId: string, param: AutomatableParam) => void
+  recordAutomationPoint: (trackId: string, param: AutomatableParam, time: number, value: number) => void
+  setAutomationArm: (arm: { trackId: string; param: AutomatableParam } | null) => void
+  setMacroValue: (trackId: string, value: number) => void
   setScaleLock: (lock: { root: number; scale: string } | null) => void
   connectMidi: () => Promise<void>
   toggleRecording: () => void
@@ -158,6 +165,7 @@ export const useStore = create<AppState>()((set, get) => ({
   midi: { supported: midiInput.supported, connected: false, deviceName: null, error: null },
   isRecording: false,
   quantizeStrength: 0,
+  automationArm: null,
 
   lesson: () => (get().mode === 'lesson' ? findLesson(get().currentLessonId) : undefined),
 
@@ -446,6 +454,10 @@ export const useStore = create<AppState>()((set, get) => ({
       name: `Clip ${track.clips.length + 1}`,
       notes: track.notes.map((n) => ({ ...n })),
       pattern: Object.fromEntries(Object.entries(track.pattern).map(([k, v]) => [k, [...v]])) as DrumPattern,
+      // Phase F: automation travels with the clip — see AUTOMATABLE_PARAMS comment in types.ts.
+      automation: track.automation
+        ? (Object.fromEntries(Object.entries(track.automation).map(([k, v]) => [k, v!.map((p) => ({ ...p }))])) as Track['automation'])
+        : undefined,
     }
     set({
       tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, clips: [...t.clips, clip] } : t)),
@@ -464,6 +476,11 @@ export const useStore = create<AppState>()((set, get) => ({
               ...t,
               notes: clip.notes.map((n) => ({ ...n, id: `u${noteCounter++}` })),
               pattern: Object.fromEntries(Object.entries(clip.pattern).map(([k, v]) => [k, [...v]])) as DrumPattern,
+              // Loading a clip replaces the live automation entirely (or clears it), same
+              // save-in/load-out snapshot semantics as notes/pattern above.
+              automation: clip.automation
+                ? (Object.fromEntries(Object.entries(clip.automation).map(([k, v]) => [k, v!.map((p) => ({ ...p }))])) as Track['automation'])
+                : undefined,
             }
           : t,
       ),
@@ -521,34 +538,67 @@ export const useStore = create<AppState>()((set, get) => ({
     engine.sync(tracks)
   },
 
-  // ---------- filter-cutoff automation (basic single-parameter breakpoint envelope) ----------
+  // ---------- Phase F: generalized breakpoint automation (any AutomatableParam, not just cutoff) ----------
 
-  setAutomationPoint: (trackId, time, value) => {
+  setAutomationPoint: (trackId, param, time, value, curve) => {
     get().pushHistory()
     set({
       tracks: get().tracks.map((t) => {
         if (t.id !== trackId) return t
-        const existing = t.cutoffAutomation ?? []
+        const existing = t.automation?.[param] ?? []
         const withoutNear = existing.filter((p) => Math.abs(p.time - time) > 0.001)
-        return { ...t, cutoffAutomation: [...withoutNear, { time, value }].sort((a, b) => a.time - b.time) }
+        const point = curve ? { time, value, curve } : { time, value }
+        return { ...t, automation: { ...t.automation, [param]: [...withoutNear, point].sort((a, b) => a.time - b.time) } }
       }),
     })
   },
 
-  removeAutomationPoint: (trackId, time) => {
+  removeAutomationPoint: (trackId, param, time) => {
     get().pushHistory()
     set({
       tracks: get().tracks.map((t) =>
         t.id === trackId
-          ? { ...t, cutoffAutomation: (t.cutoffAutomation ?? []).filter((p) => Math.abs(p.time - time) > 0.001) }
+          ? { ...t, automation: { ...t.automation, [param]: (t.automation?.[param] ?? []).filter((p) => Math.abs(p.time - time) > 0.001) } }
           : t,
       ),
     })
   },
 
-  clearAutomation: (trackId) => {
+  clearAutomation: (trackId, param) => {
     get().pushHistory()
-    set({ tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, cutoffAutomation: undefined } : t)) })
+    set({
+      tracks: get().tracks.map((t) => {
+        if (t.id !== trackId) return t
+        const automation = { ...t.automation }
+        delete automation[param]
+        return { ...t, automation }
+      }),
+    })
+  },
+
+  // Live "touch" recording: while armed + isRecording + isPlaying, Engine.tick() calls this once
+  // per step with the armed param's current (live-dragged) value — no pushHistory here, since it
+  // rides on the single history entry toggleRecording already pushed when the take started (same
+  // pattern as Phase G's recordNote).
+  recordAutomationPoint: (trackId, param, time, value) => {
+    set({
+      tracks: get().tracks.map((t) => {
+        if (t.id !== trackId) return t
+        const existing = t.automation?.[param] ?? []
+        const withoutNear = existing.filter((p) => Math.abs(p.time - time) > 0.001)
+        return { ...t, automation: { ...t.automation, [param]: [...withoutNear, { time, value }].sort((a, b) => a.time - b.time) } }
+      }),
+    })
+  },
+
+  setAutomationArm: (arm) => set({ automationArm: arm }),
+
+  setMacroValue: (trackId, value) => {
+    const clamped = Math.min(1, Math.max(0, value))
+    // Fixed mapping (not a user-remappable target list — see docs/ROADMAP.md Phase F item 30):
+    // one knob sweeps cutoff (log, 300Hz-8kHz), reverb send, and distortion mix together.
+    const cutoff = 300 * Math.pow(8000 / 300, clamped)
+    get().setSynth(trackId, { macroValue: clamped, cutoff, sendReverb: clamped * 0.6, distortionMix: clamped * 0.5 })
   },
 
   setScaleLock: (lock) => set({ scaleLock: lock }),

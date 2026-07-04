@@ -1,10 +1,12 @@
 import * as Tone from 'tone'
-import { DRUM_LANES, type AutomationPoint, type DrumLane, type InsertKind, type SynthParams, type TargetPatch, type Track } from '../types'
+import { DRUM_LANES, type AutomatableParam, type AutomationPoint, type DrumLane, type InsertKind, type SynthParams, type TargetPatch, type Track } from '../types'
 import { useStore } from '../state/store'
 
-// log-space interpolation between breakpoints (frac: 0..1 through the loop) — cutoff perception
-// is logarithmic, so this reads as an evenly-paced sweep rather than one that rushes at the top.
-function interpolateAutomation(points: AutomationPoint[], frac: number): number {
+// Interpolates between breakpoints (frac: 0..1 through the loop). `log` compares in log-space —
+// used only for cutoff, since frequency perception is logarithmic (a linear sweep rushes at the
+// top); every other automatable param interpolates linearly. A point with curve:'hold' steps
+// abruptly at the next point instead of ramping, for stab-like automated changes.
+function interpolateAutomation(points: AutomationPoint[], frac: number, log: boolean): number {
   const pts = [...points].sort((a, b) => a.time - b.time)
   if (frac <= pts[0].time) return pts[0].value
   if (frac >= pts[pts.length - 1].time) return pts[pts.length - 1].value
@@ -12,8 +14,9 @@ function interpolateAutomation(points: AutomationPoint[], frac: number): number 
     const a = pts[i]
     const b = pts[i + 1]
     if (frac >= a.time && frac <= b.time) {
+      if (a.curve === 'hold') return a.value
       const t = (frac - a.time) / (b.time - a.time || 1)
-      return a.value * Math.pow(b.value / a.value, t)
+      return log ? a.value * Math.pow(b.value / a.value, t) : a.value + (b.value - a.value) * t
     }
   }
   return pts[pts.length - 1].value
@@ -396,6 +399,17 @@ class Engine {
     // ~66% ≈ triplet shuffle. Applied as a scheduling offset, not a pattern change.
     const swingTime = step % 2 === 1 ? time + stepSeconds * (2 * (s.swing / 100) - 1) : time
 
+    // Phase F: live "touch" automation recording — same REC arm as Phase G's MIDI notes, just
+    // capturing whatever value the armed param currently holds (i.e. whatever the user is live-
+    // dragging in the device panel) once per step, rather than a note.
+    if (s.automationArm && s.isRecording) {
+      const { trackId, param } = s.automationArm
+      const armedTrack = s.tracks.find((t) => t.id === trackId)
+      if (armedTrack && armedTrack.kind === 'synth') {
+        useStore.getState().recordAutomationPoint(trackId, param, step / totalSteps, armedTrack.synth[param])
+      }
+    }
+
     for (const tr of s.tracks) {
       if (tr.muted) continue
       if (s.arrangement.enabled && s.arrangement.mode === 'energy') {
@@ -417,36 +431,91 @@ class Engine {
         const lfoOn = p.lfoDest !== 'off' && p.lfoDepth > 0
         const lfoValue = lfoOn ? Math.sin(2 * Math.PI * p.lfoRate * time) : 0
 
+        const cutoffAuto = tr.automation?.cutoff
         let baseCutoff = p.cutoff
-        if (tr.cutoffAutomation && tr.cutoffAutomation.length) {
-          baseCutoff = interpolateAutomation(tr.cutoffAutomation, step / totalSteps)
+        if (cutoffAuto && cutoffAuto.length) {
+          baseCutoff = interpolateAutomation(cutoffAuto, step / totalSteps, true)
         }
         if (p.lfoDest === 'cutoff' && lfoOn) {
           const hz = baseCutoff * Math.pow(2, p.lfoDepth * lfoValue)
           chain.filter.frequency.linearRampToValueAtTime(hz, swingTime + stepSeconds)
-        } else if (tr.cutoffAutomation && tr.cutoffAutomation.length) {
+        } else if (cutoffAuto && cutoffAuto.length) {
           chain.filter.frequency.linearRampToValueAtTime(baseCutoff, swingTime + stepSeconds)
         }
         if (p.lfoDest === 'amp' && lfoOn) {
           chain.vol.volume.linearRampToValueAtTime(p.volume + p.lfoDepth * lfoValue * 12, swingTime + stepSeconds)
         }
 
+        // Phase F: generic breakpoint automation for every other automatable param (cutoff is
+        // handled above since it also interacts with the original LFO; duckAmount is handled
+        // below since it also interacts with the sidechain duck). Known limitation: an automated
+        // param that's *also* driven by LFO2 (below) or the original LFO/duck will have whichever
+        // block runs last win within the same tick — same documented tradeoff as the duck/amp-LFO
+        // case, not worth a full modulation-mixing pass for a step-resolution teaching engine.
+        const rampTime = swingTime + stepSeconds
+        if (tr.automation) {
+          for (const key of Object.keys(tr.automation) as AutomatableParam[]) {
+            if (key === 'cutoff' || key === 'duckAmount') continue
+            const points = tr.automation[key]
+            if (!points || !points.length) continue
+            const val = interpolateAutomation(points, step / totalSteps, false)
+            switch (key) {
+              case 'resonance': chain.filter.Q.linearRampToValueAtTime(val, rampTime); break
+              case 'volume': chain.vol.volume.linearRampToValueAtTime(val, rampTime); break
+              case 'pan': chain.panner.pan.linearRampToValueAtTime(val, rampTime); break
+              case 'sendReverb': chain.reverbSend.gain.linearRampToValueAtTime(val, rampTime); break
+              case 'sendDelay': chain.delaySend.gain.linearRampToValueAtTime(val, rampTime); break
+              case 'sendMod': chain.modSend.gain.linearRampToValueAtTime(val, rampTime); break
+              case 'eqLow': chain.eq3.low.linearRampToValueAtTime(val, rampTime); break
+              case 'eqMid': chain.eq3.mid.linearRampToValueAtTime(val, rampTime); break
+              case 'eqHigh': chain.eq3.high.linearRampToValueAtTime(val, rampTime); break
+              case 'compMix':
+                chain.compDry.gain.linearRampToValueAtTime(1 - val, rampTime)
+                chain.compWet.gain.linearRampToValueAtTime(val, rampTime)
+                break
+              case 'distortionMix': chain.distortion.wet.linearRampToValueAtTime(val, rampTime); break
+              case 'bitcrushMix': chain.bitcrush.wet.linearRampToValueAtTime(val, rampTime); break
+            }
+          }
+        }
+
+        // Phase F: LFO 2 — a second, independent modulation route to a disjoint destination set
+        // (see Lfo2Dest in types.ts), additive on top of that destination's static/automated value.
+        const lfo2On = p.lfo2Dest !== 'off' && p.lfo2Depth > 0
+        if (lfo2On) {
+          const lfo2Value = Math.sin(2 * Math.PI * p.lfo2Rate * time)
+          const d = p.lfo2Depth * lfo2Value
+          const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
+          switch (p.lfo2Dest) {
+            case 'pan': chain.panner.pan.linearRampToValueAtTime(Math.max(-1, Math.min(1, p.pan + d)), rampTime); break
+            case 'sendReverb': chain.reverbSend.gain.linearRampToValueAtTime(clamp01(p.sendReverb + d * 0.5), rampTime); break
+            case 'sendDelay': chain.delaySend.gain.linearRampToValueAtTime(clamp01(p.sendDelay + d * 0.5), rampTime); break
+            case 'sendMod': chain.modSend.gain.linearRampToValueAtTime(clamp01(p.sendMod + d * 0.5), rampTime); break
+            case 'eqLow': chain.eq3.low.linearRampToValueAtTime(p.eqLow + d * 12, rampTime); break
+            case 'eqMid': chain.eq3.mid.linearRampToValueAtTime(p.eqMid + d * 12, rampTime); break
+            case 'eqHigh': chain.eq3.high.linearRampToValueAtTime(p.eqHigh + d * 12, rampTime); break
+            case 'distortionMix': chain.distortion.wet.linearRampToValueAtTime(clamp01(p.distortionMix + d * 0.5), rampTime); break
+          }
+        }
+
         // Phase E scheduled sidechain duck: not a real audio-analysis sidechain (there's no
         // envelope follower here) — it ducks this track's volume whenever duckSource's kick lane
         // has a hit at this step, scheduled from pattern data the same way everything else in this
-        // engine is. Known limitation: this and the lfoDest==='amp' case above both automate
-        // chain.vol.volume, so a track using both at once will have one silently override the
-        // other within the same tick (duck wins, since it runs last) — an edge case rare enough
-        // not to warrant a full modulation-mixing pass for.
-        if (p.duckSource && p.duckAmount > 0) {
-          const source = s.tracks.find((x) => x.id === p.duckSource)
-          const kickHit = source?.kind === 'drums' ? source.pattern.kick[step % 16] : 0
-          if (kickHit) {
-            const dipDb = p.duckAmount * 24
-            chain.vol.volume.cancelScheduledValues(swingTime)
-            chain.vol.volume.setValueAtTime(p.volume, swingTime)
-            chain.vol.volume.linearRampToValueAtTime(p.volume - dipDb, swingTime + 0.005)
-            chain.vol.volume.linearRampToValueAtTime(p.volume, swingTime + 0.16)
+        // engine is. duckAmount can itself be automated (Phase F) — if so, the automated value
+        // wins over the static p.duckAmount for this step.
+        if (p.duckSource) {
+          const duckAuto = tr.automation?.duckAmount
+          const duckAmt = duckAuto && duckAuto.length ? interpolateAutomation(duckAuto, step / totalSteps, false) : p.duckAmount
+          if (duckAmt > 0) {
+            const source = s.tracks.find((x) => x.id === p.duckSource)
+            const kickHit = source?.kind === 'drums' ? source.pattern.kick[step % 16] : 0
+            if (kickHit) {
+              const dipDb = duckAmt * 24
+              chain.vol.volume.cancelScheduledValues(swingTime)
+              chain.vol.volume.setValueAtTime(p.volume, swingTime)
+              chain.vol.volume.linearRampToValueAtTime(p.volume - dipDb, swingTime + 0.005)
+              chain.vol.volume.linearRampToValueAtTime(p.volume, swingTime + 0.16)
+            }
           }
         }
 

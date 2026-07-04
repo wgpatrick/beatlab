@@ -42,6 +42,8 @@ const P_EQ: (keyof SynthParams)[] = [...P_EFFECTS, 'eqLow', 'eqMid', 'eqHigh']
 const P_COMP: (keyof SynthParams)[] = [...P_EQ, 'compThreshold', 'compRatio', 'compAttack', 'compRelease', 'compMix']
 const P_DIST: (keyof SynthParams)[] = [...P_COMP, 'distortionAmount', 'distortionMix', 'bitcrushBits', 'bitcrushMix']
 const P_MIX: (keyof SynthParams)[] = [...P_DIST, 'insertOrder', 'sendMod', 'duckSource', 'duckAmount']
+// Phase F: modulation matrix (LFO2) + macro — same cumulative-reveal pattern.
+const P_MOD: (keyof SynthParams)[] = [...P_MIX, 'lfo2Rate', 'lfo2Depth', 'lfo2Dest', 'macroValue']
 
 function messageFor(scores: ScoreMap, hints: Partial<Record<keyof SynthParams, string>>, successMsg: string) {
   const entries = Object.entries(scores) as [keyof SynthParams, NonNullable<ScoreMap[keyof SynthParams]>][]
@@ -616,6 +618,60 @@ const mixingLessons: Lesson[] = [
       if (p.duckAmount < 0.6) issues.push(`depth ${Math.round(p.duckAmount * 100)}% (need ≥ 60%)`)
       if (issues.length) return fail('Not pumping yet — ' + issues.join('; ') + '.')
       return pass('That\'s the sidechain pump — the bass ducking out of the kick\'s way, on every hit, automatically.')
+    },
+  },
+  {
+    id: 'intro-lfo2',
+    module: MIXING,
+    title: 'LFO 2: A Second Modulation Route',
+    summary:
+      'One LFO can only modulate one destination at a time (pitch, cutoff, or amp). LFO 2 is a completely independent second route, to a different set of destinations — pan, sends, EQ bands, distortion mix. Run both LFOs at once, each doing its own thing, and you have the beginning of a real modulation matrix: multiple simultaneous routes instead of just one.',
+    task: 'Set LFO 2\'s destination to PAN, with a rate around 0.5–2Hz and depth of at least 50% — you should hear this pad sweep left-right-left automatically, an "auto-pan".',
+    hints: [
+      'This is a second, independent LFO from the one in the LFO section above — it doesn\'t touch that one\'s destination at all.',
+      'A slow rate (under 1Hz) reads as a wide, dreamy pan sweep; faster rates start to sound like tremolo.',
+    ],
+    centerPitch: 60,
+    visibleParams: P_MOD,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Pad', '#61afef', { osc: 'triangle', cutoff: 4000, attack: 0.4, decay: 0.3, sustain: 0.7, release: 1.0 }, [n(57, 0, 16), n(60, 0, 16), n(64, 0, 16)])],
+      loopBars: 1,
+      bpm: 100,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.lfo2Dest !== 'pan') issues.push('LFO 2 destination isn\'t set to Pan')
+      if (p.lfo2Rate < 0.3 || p.lfo2Rate > 3) issues.push(`rate ${p.lfo2Rate.toFixed(2)}Hz (need 0.3–3Hz for an audible sweep, not a blur or a crawl)`)
+      if (p.lfo2Depth < 0.5) issues.push(`depth ${Math.round(p.lfo2Depth * 100)}% (need ≥ 50% to actually hear it move)`)
+      if (issues.length) return fail('Not auto-panning yet — ' + issues.join('; ') + '.')
+      return pass('That\'s two independent modulation routes running at once — the core idea behind any real modulation matrix, just with two fixed LFOs instead of an open grid.')
+    },
+  },
+  {
+    id: 'intro-macro',
+    module: MIXING,
+    title: 'Macro: One Knob, Several Parameters',
+    summary:
+      'A macro is a single control mapped to several parameters at once — turn one knob live and a filter opens, a reverb swells, and some grit creeps in, all together. This is exactly how Ableton\'s Racks or Serum\'s Macros work, and it\'s built for performance: one hand, one knob, a whole timbral shift.',
+    task: 'Turn the MACRO knob up to at least 70% and listen — cutoff, reverb send, and distortion mix should all move together.',
+    hints: [
+      'This macro\'s mapping is fixed (cutoff + reverb send + distortion mix) rather than something you configure — the point is the one-knob-many-params concept, not building your own mapping.',
+      'Watch the actual Cutoff, Reverb, and Distortion Mix knobs elsewhere in this panel as you turn the macro — they\'ll visibly move too.',
+    ],
+    centerPitch: 60,
+    visibleParams: P_MOD,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Lead', '#c678dd', { osc: 'sawtooth', cutoff: 1000, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.3 }, riffOneBar(64))],
+      loopBars: 1,
+      bpm: 120,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      if (p.macroValue < 0.7) return fail(`Macro is at ${Math.round(p.macroValue * 100)}% — push it to at least 70%.`)
+      return pass('One knob, three parameters, moving together — that\'s a macro. Real racks let you choose the mapping; this one\'s fixed, but the performance concept is identical.')
     },
   },
   matchLesson({
