@@ -1060,15 +1060,17 @@ button.seq-label:hover {
    pattern groups — sits inline with a knob-row instead of stacking on its own row, trading
    section height for width (several sections were overflowing the device panel vertically). */
 .unison-btns {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 3px;
-  width: 48px;
+  width: 96px;
+  align-content: start;
 }
 .unison-btns-label {
   font-size: 9px;
   color: var(--dim);
   margin-bottom: 1px;
+  grid-column: 1 / -1;
 }
 .unison-btns .wave {
   padding: 3px 6px;
@@ -1590,4 +1592,16 @@ button.seq-label:hover {
   flex-direction: column;
   gap: 7px;
   line-height: 1.45;
+}
+
+/* ---------- Wave 3: drawable LFO shape editor ---------- */
+.lfo-step-editor {
+  flex: 1;
+  min-width: 140px;
+  height: 52px;
+  background: #16181c;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: none;
 }

@@ -78,6 +78,9 @@ const PARAM_TOLERANCE: Partial<Record<keyof SynthParams, Tolerance>> = {
 // params use a perceptibility-tuned tolerance band (e.g. cutoff compared in octaves, not linear Hz).
 function scoreOne(key: keyof SynthParams, got: unknown, want: unknown): ParamStatus {
   if (typeof want === 'string') return got === want ? 'correct' : 'wrong'
+  // array params (insertOrder, lfoSteps) compare by content — reference equality would mark a
+  // param wrong the moment the user touched it, even if they put it back
+  if (Array.isArray(want)) return JSON.stringify(got) === JSON.stringify(want) ? 'correct' : 'wrong'
   const tol = PARAM_TOLERANCE[key]
   if (!tol) return got === want ? 'correct' : 'wrong'
   const g = got as number

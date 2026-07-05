@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
-import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SyncDivision, type SynthParams, type Track } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SyncDivision, type SynthParams, type Track, type WtTable } from '../types'
 import { engine } from '../audio/engine'
 import { useStore } from '../state/store'
 import { Knob } from './Knob'
 import { Scope } from './Scope'
+import { WT_TABLE_INFO } from '../audio/wavetables'
 import type { ParamStatus } from '../lessons/framework'
 
 const WAVES: { type: OscType; label: string; path: string; hint: string }[] = [
@@ -24,6 +25,7 @@ const LFO_DESTS: { dest: LfoDest; label: string }[] = [
   { dest: 'pitch', label: 'Pitch' },
   { dest: 'cutoff', label: 'Cutoff' },
   { dest: 'amp', label: 'Amp' },
+  { dest: 'wtPos', label: 'WT' },
 ]
 
 const LFO2_DESTS: { dest: Lfo2Dest; label: string }[] = [
@@ -50,6 +52,58 @@ const ratio = (v: number) => `${v.toFixed(1)}:1`
 const bits = (v: number) => `${Math.round(v)}bit`
 
 const INSERT_LABELS: Record<InsertKind, string> = { eq: 'EQ', comp: 'COMP', dist: 'DIST' }
+
+/** Wave 3: draw-your-own LFO shape — 16 bars, drag across to sketch a wobble/pump pattern.
+ * One full pass through the drawing = one LFO cycle (so a synced 1/1 rate = the drawing per bar). */
+function LfoStepEditor({ steps, onChange }: { steps: number[]; onChange: (s: number[]) => void }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const dragging = useRef(false)
+
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const W = (canvas.width = canvas.clientWidth * 2)
+    const H = (canvas.height = canvas.clientHeight * 2)
+    const ctx = canvas.getContext('2d')!
+    ctx.clearRect(0, 0, W, H)
+    const bw = W / 16
+    for (let i = 0; i < 16; i++) {
+      const v = steps[i] ?? 0.5
+      ctx.fillStyle = i % 4 === 0 ? '#ffb02e' : '#c98a24'
+      ctx.fillRect(i * bw + 1, H - v * H, bw - 2, Math.max(2, v * H))
+    }
+    // center line = the LFO's zero crossing
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'
+    ctx.fillRect(0, H / 2 - 1, W, 2)
+  }, [steps])
+
+  const paint = (e: React.PointerEvent) => {
+    const canvas = ref.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const i = Math.max(0, Math.min(15, Math.floor(((e.clientX - rect.left) / rect.width) * 16)))
+    const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height))
+    if (steps[i] === v) return
+    const next = steps.length === 16 ? [...steps] : Array(16).fill(0.5)
+    next[i] = Math.round(v * 100) / 100
+    onChange(next)
+  }
+
+  return (
+    <canvas
+      ref={ref}
+      className="lfo-step-editor"
+      title="Drag to draw the LFO's shape — one full pass = one cycle. Top = +1, bottom = -1."
+      onPointerDown={(e) => {
+        dragging.current = true
+        e.currentTarget.setPointerCapture(e.pointerId)
+        paint(e)
+      }}
+      onPointerMove={(e) => dragging.current && paint(e)}
+      onPointerUp={() => (dragging.current = false)}
+    />
+  )
+}
 
 /** Collapsible wrapper for one device-panel section — click the title to fold it away, so a
  * lesson exposing many sections at once (e.g. everything up through Synth Depth II) can still
@@ -164,7 +218,7 @@ export function DevicePanel({ track }: { track: Track }) {
       <Scope />
       {visible('osc') && (
         <Section title="OSC" hint="The main oscillator — the wave everything else in this patch is built around">
-          <div className="wave-btns">
+          <div className="wave-btns" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
             {WAVES.map((w) => (
               <button
                 key={w.type}
@@ -178,7 +232,44 @@ export function DevicePanel({ track }: { track: Track }) {
                 {w.label}
               </button>
             ))}
+            <button
+              className={`wave ${p.osc === 'wavetable' ? 'on' : ''} ${p.osc === 'wavetable' && statusOf('osc') ? `status-${statusOf('osc')}` : ''}`}
+              onClick={() => set({ osc: 'wavetable' })}
+              title="Wavetable: not one fixed shape but a whole table of spectra — the WT POS knob scans through them, morphing the timbre (Serum's signature oscillator)"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16">
+                <path d="M1 8 Q3 3, 5 8 T9 8 L11 4 L11 12 L13 5 L15 11" stroke="currentColor" strokeWidth="1.5" fill="none" />
+              </svg>
+              WT
+            </button>
           </div>
+          {p.osc === 'wavetable' && (
+            <div className="knob-row" style={{ alignItems: 'center', marginTop: 8 }}>
+              <div className="unison-btns">
+                <div className="unison-btns-label">Table</div>
+                {WT_TABLE_INFO.map((t) => (
+                  <button
+                    key={t.value}
+                    className={`wave ${p.wtTable === t.value ? 'on' : ''}`}
+                    onClick={() => set({ wtTable: t.value as WtTable })}
+                    title={t.blurb}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <Knob
+                label="WT Pos"
+                value={p.wtPos}
+                min={0}
+                max={1}
+                format={pct}
+                status={statusOf('wtPos')}
+                onChange={(v) => set({ wtPos: v })}
+                hint="Position through the wavetable — turn it while a note plays and the timbre morphs. Modulate it with the LFO (dest: WT) or an automation lane for movement"
+              />
+            </div>
+          )}
         </Section>
       )}
       {showOscBank && (
@@ -216,17 +307,35 @@ export function DevicePanel({ track }: { track: Track }) {
             {showUnison && (
               <div className="unison-btns">
                 <div className="unison-btns-label">Unison</div>
-                {[1, 2, 3].map((v) => (
+                {[1, 2, 3, 5, 7].map((v) => (
                   <button
                     key={v}
                     className={`wave ${p.unisonVoices === v ? 'on' : ''} ${p.unisonVoices === v && statusOf('unisonVoices') ? `status-${statusOf('unisonVoices')}` : ''}`}
-                    onClick={() => set({ unisonVoices: v as 1 | 2 | 3 })}
-                    title={v === 1 ? 'Just the main oscillator' : v === 2 ? 'Adds Osc2 at +Detune (the classic "supersaw" 2-voice stack)' : 'Adds a third voice mirrored at -Detune, for a symmetric, wider stack'}
+                    onClick={() => set({ unisonVoices: v as 1 | 2 | 3 | 5 | 7 })}
+                    title={
+                      v === 1 ? 'Just the main oscillator'
+                      : v === 2 ? 'Adds Osc2 at +Detune (the classic 2-voice stack)'
+                      : v === 3 ? 'Adds a third voice mirrored at -Detune — a symmetric stack'
+                      : v === 5 ? 'Adds an outer pair at ±1.6x Detune, quieter — thicker, Serum-style'
+                      : 'Adds two outer pairs (±1.6x and ±2.4x Detune) — the full supersaw wall'
+                    }
                   >
                     {v}V
                   </button>
                 ))}
               </div>
+            )}
+            {showUnison && p.unisonVoices >= 3 && visible('unisonWidth') && (
+              <Knob
+                label="Width"
+                value={p.unisonWidth}
+                min={0}
+                max={1}
+                format={pct}
+                status={statusOf('unisonWidth')}
+                onChange={(v) => set({ unisonWidth: v })}
+                hint="Stereo spread of the unison stack — pans voice pairs left/right of center. 0 = mono (all voices center), 100% = hard-panned outer voices"
+              />
             )}
           </div>
         </Section>
@@ -365,17 +474,35 @@ export function DevicePanel({ track }: { track: Track }) {
       {showLfo && (
         <Section title="LFO" hint="A low-frequency oscillator that continuously modulates one destination — the classic wobble/vibrato/tremolo mechanism">
           {visible('lfoDest') && (
-            <div className="wave-btns" style={{ marginBottom: 8, gridTemplateColumns: '1fr 1fr 1fr 1fr' }}>
+            <div className="wave-btns" style={{ marginBottom: 8, gridTemplateColumns: 'repeat(5, 1fr)' }}>
               {LFO_DESTS.map((d) => (
                 <button
                   key={d.dest}
                   className={`wave ${p.lfoDest === d.dest ? 'on' : ''} ${p.lfoDest === d.dest && statusOf('lfoDest') ? `status-${statusOf('lfoDest')}` : ''}`}
                   onClick={() => set({ lfoDest: d.dest })}
-                  title={d.dest === 'off' ? 'LFO has no effect' : d.dest === 'pitch' ? 'Modulates pitch (vibrato)' : d.dest === 'cutoff' ? 'Modulates filter cutoff (wobble)' : 'Modulates volume (tremolo)'}
+                  title={
+                    d.dest === 'off' ? 'LFO has no effect'
+                    : d.dest === 'pitch' ? 'Modulates pitch (vibrato)'
+                    : d.dest === 'cutoff' ? 'Modulates filter cutoff (wobble)'
+                    : d.dest === 'amp' ? 'Modulates volume (tremolo)'
+                    : 'Scans the wavetable position — only audible when the main OSC is WT'
+                  }
                 >
                   {d.label}
                 </button>
               ))}
+            </div>
+          )}
+          {visible('lfoShape') && (
+            <div className="knob-row" style={{ alignItems: 'center', marginBottom: 8 }}>
+              <button
+                className={`wave lfo-sync-btn ${p.lfoShape === 'custom' ? 'on' : ''}`}
+                onClick={() => set({ lfoShape: p.lfoShape === 'custom' ? 'sine' : 'custom' })}
+                title="Swap the LFO's sine for a hand-drawn 16-step shape — draw your own wobble/pump pattern (Serum's LFO editor, at this engine's step resolution)"
+              >
+                ✎ Draw
+              </button>
+              {p.lfoShape === 'custom' && <LfoStepEditor steps={p.lfoSteps} onChange={(s) => set({ lfoSteps: s })} />}
             </div>
           )}
           <div className="knob-row" style={{ alignItems: 'center' }}>

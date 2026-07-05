@@ -1,6 +1,7 @@
 import * as Tone from 'tone'
 import { DRUM_LANES, type AutomatableParam, type AutomationPoint, type DrumLane, type InsertKind, type SyncDivision, type SynthParams, type TargetPatch, type Track } from '../types'
 import { useStore } from '../state/store'
+import { wtPartials } from './wavetables'
 
 // Tempo-synced LFO rate: each division's length in quarter-note beats (t = triplet, 2/3 the
 // normal length so it fits 3-in-the-space-of-2, i.e. faster; d = dotted, 1.5x the normal length,
@@ -10,6 +11,17 @@ const DIVISION_BEATS: Record<SyncDivision, number> = {
   '1/4t': 2 / 3, '1/8t': 1 / 3, '1/16t': 1 / 6,
   '1/4d': 1.5, '1/8d': 0.75, '1/16d': 0.375,
 }
+// Wave 3: LFO 1's instantaneous value at time t — a sine, or the hand-drawn 16-step shape (one
+// full pass through the steps = one cycle, so a synced 1/1 rate spreads the drawing over a bar).
+// Bipolar -1..1 either way, so every destination's existing depth math is unchanged.
+function lfoWaveValue(p: SynthParams, rateHz: number, t: number): number {
+  if (p.lfoShape === 'custom' && p.lfoSteps?.length) {
+    const phase = (((rateHz * t) % 1) + 1) % 1
+    return (p.lfoSteps[Math.floor(phase * p.lfoSteps.length) % p.lfoSteps.length] ?? 0.5) * 2 - 1
+  }
+  return Math.sin(2 * Math.PI * rateHz * t)
+}
+
 function syncedRateHz(bpm: number, division: SyncDivision): number {
   return bpm / 60 / DIVISION_BEATS[division]
 }
@@ -45,6 +57,17 @@ interface SynthChain {
   // active only when unisonVoices === 3. Silent (Gain 0) otherwise.
   osc3: Tone.PolySynth<Tone.Synth>
   osc3Gain: Tone.Gain
+  // Wave 3: per-voice panners for stereo unison width — osc2/osc3 pan ±0.5·width when the stack
+  // is on (unisonVoices >= 3), and the outer pairs below pan wider still. Width 0 = all center,
+  // byte-identical image to the pre-Wave-3 mono stack.
+  osc2Pan: Tone.Panner
+  osc3Pan: Tone.Panner
+  // Outer unison pairs (voices 4/5 at ±1.6x detune, 6/7 at ±2.4x), mirroring osc2Type/osc2Level
+  // at reduced level like Serum's outer-voice taper. Gain 0 unless unisonVoices >= minVoices.
+  uniPairs: { poly: Tone.PolySynth<Tone.Synth>; pan: Tone.Panner; gain: Tone.Gain; mul: number; minVoices: number; level: number }[]
+  // cache key of the main oscillator's current wave (shape name, or wavetable table+position) so
+  // applyParams doesn't rebuild the PeriodicWave on every knob drag
+  lastOscKey?: string
   sub: Tone.PolySynth<Tone.Synth>
   subGain: Tone.Gain
   noise: Tone.NoiseSynth
@@ -128,7 +151,11 @@ class Engine {
       this.masterMeter = new Tone.Meter({ smoothing: 0.8 })
       this.waveformAnalyser = new Tone.Analyser('waveform', 1024)
       this.fftAnalyser = new Tone.Analyser('fft', 256)
-      this.masterBus.chain(this.masterLimiter, this.masterMeter, Tone.getDestination())
+      // the meter is a side-tap (like the analysers), NOT an in-chain hop: a metering node in
+      // the signal path could impose its own channel count on everything downstream, and the
+      // Wave 3 stereo unison image must survive to the speakers untouched
+      this.masterBus.chain(this.masterLimiter, Tone.getDestination())
+      this.masterLimiter.connect(this.masterMeter)
       this.masterLimiter.connect(this.waveformAnalyser)
       this.masterLimiter.connect(this.fftAnalyser)
     }
@@ -389,7 +416,9 @@ class Engine {
     if (!chain) {
       const { reverb, delay, mod } = this.getBuses()
       const filter = new Tone.Filter(track.synth.cutoff, 'lowpass')
-      const panner = new Tone.Panner(track.synth.pan)
+      // channelCount 2: Tone.Panner defaults to mono input, which would fold the unison stack's
+      // stereo image (Wave 3 width panners upstream) back to center before it ever left the track
+      const panner = new Tone.Panner({ pan: track.synth.pan, channelCount: 2 })
       const vol = new Tone.Volume(track.synth.volume)
       const reverbSend = new Tone.Gain(track.synth.sendReverb)
       const delaySend = new Tone.Gain(track.synth.sendDelay)
@@ -399,6 +428,14 @@ class Engine {
       const osc2Gain = new Tone.Gain(0)
       const osc3 = new Tone.PolySynth(Tone.Synth)
       const osc3Gain = new Tone.Gain(0)
+      const osc2Pan = new Tone.Panner(0)
+      const osc3Pan = new Tone.Panner(0)
+      const uniPairs = [
+        { mul: 1.6, minVoices: 5, level: 0.7 },
+        { mul: -1.6, minVoices: 5, level: 0.7 },
+        { mul: 2.4, minVoices: 7, level: 0.55 },
+        { mul: -2.4, minVoices: 7, level: 0.55 },
+      ].map((d) => ({ ...d, poly: new Tone.PolySynth(Tone.Synth), pan: new Tone.Panner(0), gain: new Tone.Gain(0) }))
       const sub = new Tone.PolySynth(Tone.Synth)
       const subGain = new Tone.Gain(0)
       const noise = new Tone.NoiseSynth({ noise: { type: 'white' } })
@@ -418,8 +455,9 @@ class Engine {
       const bitcrush = new Tone.BitCrusher(8) // wet applied in applyParams, which always runs right after
 
       synth.connect(filter)
-      osc2.chain(osc2Gain, filter)
-      osc3.chain(osc3Gain, filter)
+      osc2.chain(osc2Pan, osc2Gain, filter)
+      osc3.chain(osc3Pan, osc3Gain, filter)
+      for (const u of uniPairs) u.poly.chain(u.pan, u.gain, filter)
       sub.chain(subGain, filter)
       noise.chain(noiseGain, filter)
       fm.chain(fmGain, filter)
@@ -441,7 +479,7 @@ class Engine {
       modSend.connect(mod)
 
       chain = {
-        synth, osc2, osc2Gain, osc3, osc3Gain, sub, subGain, noise, noiseGain, fm, fmGain, filter, panner, vol, reverbSend, delaySend,
+        synth, osc2, osc2Gain, osc3, osc3Gain, osc2Pan, osc3Pan, uniPairs, sub, subGain, noise, noiseGain, fm, fmGain, filter, panner, vol, reverbSend, delaySend,
         eq3, compIn, compDry, compressor, compWet, compOut, distortion, bitcrush, modSend, lastInsertOrder: [],
       }
       this.chains.set(track.id, chain)
@@ -475,15 +513,40 @@ class Engine {
     chain.lastInsertOrder = [...order]
   }
 
+  // Sets the main oscillator's wave — a named shape, or the wavetable's interpolated spectrum at
+  // `pos` (normally p.wtPos; the tick loop passes an LFO/automation-scanned position instead).
+  // Cached on lastOscKey so applyParams' constant knob-drag calls don't rebuild the PeriodicWave.
+  private applyMainOsc(chain: SynthChain, p: SynthParams, pos: number) {
+    const key = p.osc === 'wavetable' ? `wt:${p.wtTable}:${pos.toFixed(3)}` : p.osc
+    if (chain.lastOscKey === key) return
+    if (p.osc === 'wavetable') {
+      chain.synth.set({ oscillator: { type: 'custom', partials: wtPartials(p.wtTable, pos) } })
+    } else {
+      chain.synth.set({ oscillator: { type: p.osc } })
+    }
+    chain.lastOscKey = key
+  }
+
   private applyParams(chain: SynthChain, p: SynthParams) {
     const env = { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release }
     // Glide/portamento applies to every pitched voice so a slide sounds consistent across the
     // whole oscillator bank, not just the main osc.
-    chain.synth.set({ oscillator: { type: p.osc }, envelope: env, portamento: p.glide })
+    chain.synth.set({ envelope: env, portamento: p.glide })
+    this.applyMainOsc(chain, p, p.wtPos)
     chain.osc2.set({ oscillator: { type: p.osc2Type }, envelope: env, portamento: p.glide })
     // Unison voice 3: same waveform/level as osc2, mirrored at the opposite detune — only active
     // (audible) when unisonVoices === 3; osc3Gain otherwise stays 0 regardless of osc2Level.
     chain.osc3.set({ oscillator: { type: p.osc2Type }, envelope: env, portamento: p.glide })
+    // Wave 3: stereo unison width — only spreads once a real stack is on (>= 3 voices); a lone
+    // osc2 "OSC B" layer stays centered exactly as before.
+    const width = p.unisonVoices >= 3 ? p.unisonWidth : 0
+    chain.osc2Pan.pan.value = width * 0.5
+    chain.osc3Pan.pan.value = -width * 0.5
+    for (const u of chain.uniPairs) {
+      u.poly.set({ oscillator: { type: p.osc2Type }, envelope: env, portamento: p.glide })
+      u.gain.gain.value = p.unisonVoices >= u.minVoices ? p.osc2Level * u.level : 0
+      u.pan.pan.value = Math.sign(u.mul) * width * (u.minVoices === 5 ? 0.8 : 1)
+    }
     chain.sub.set({ oscillator: { type: 'sine' }, envelope: env, portamento: p.glide })
     chain.noise.set({ envelope: env })
     chain.fm.set({
@@ -535,6 +598,13 @@ class Engine {
         chain.osc2Gain.dispose()
         chain.osc3.dispose()
         chain.osc3Gain.dispose()
+        chain.osc2Pan.dispose()
+        chain.osc3Pan.dispose()
+        for (const u of chain.uniPairs) {
+          u.poly.dispose()
+          u.pan.dispose()
+          u.gain.dispose()
+        }
         chain.sub.dispose()
         chain.subGain.dispose()
         chain.noise.dispose()
@@ -579,6 +649,8 @@ class Engine {
     chain.synth.triggerAttack(freq, undefined, velocity)
     if (p.osc2Level > 0) chain.osc2.triggerAttack(freq * Math.pow(2, p.osc2Detune / 1200), undefined, velocity)
     if (p.unisonVoices >= 3 && p.osc2Level > 0) chain.osc3.triggerAttack(freq * Math.pow(2, -p.osc2Detune / 1200), undefined, velocity)
+    for (const u of chain.uniPairs)
+      if (p.unisonVoices >= u.minVoices && p.osc2Level > 0) u.poly.triggerAttack(freq * Math.pow(2, (u.mul * p.osc2Detune) / 1200), undefined, velocity)
     if (p.subLevel > 0) chain.sub.triggerAttack(freq / 2, undefined, velocity)
     if (p.noiseLevel > 0) chain.noise.triggerAttack(undefined, velocity)
     if (p.fmLevel > 0) chain.fm.triggerAttack(freq, undefined, velocity)
@@ -594,6 +666,7 @@ class Engine {
     chain.synth.triggerRelease(freq)
     chain.osc2.triggerRelease(freq * Math.pow(2, track.synth.osc2Detune / 1200))
     chain.osc3.triggerRelease(freq * Math.pow(2, -track.synth.osc2Detune / 1200))
+    for (const u of chain.uniPairs) u.poly.triggerRelease(freq * Math.pow(2, (u.mul * track.synth.osc2Detune) / 1200))
     chain.sub.triggerRelease(freq / 2)
     chain.noise.triggerRelease()
     chain.fm.triggerRelease(freq)
@@ -675,7 +748,7 @@ class Engine {
         // knob's tooltip). Tempo sync (lfoSync) just changes what feeds this same Hz value.
         const lfoOn = p.lfoDest !== 'off' && p.lfoDepth > 0
         const lfoRateHz = p.lfoSync ? syncedRateHz(s.bpm, p.lfoSyncRate) : p.lfoRate
-        const lfoValue = lfoOn ? Math.sin(2 * Math.PI * lfoRateHz * time) : 0
+        const lfoValue = lfoOn ? lfoWaveValue(p, lfoRateHz, time) : 0
 
         const cutoffAuto = tr.automation?.cutoff
         let baseCutoff = p.cutoff
@@ -690,6 +763,13 @@ class Engine {
         }
         if (p.lfoDest === 'amp' && lfoOn) {
           chain.vol.volume.linearRampToValueAtTime(p.volume + p.lfoDepth * lfoValue * 12, swingTime + stepSeconds)
+        }
+        // Wave 3: LFO -> wavetable position, scanning ±half the table around the static wtPos.
+        // Rebuilds the main osc's spectrum once per step — the same control-rate resolution as
+        // every other modulation here (spectra swap discretely; that stepping is audible and
+        // documented, like fast LFO rates).
+        if (p.lfoDest === 'wtPos' && lfoOn && p.osc === 'wavetable') {
+          this.applyMainOsc(chain, p, Math.max(0, Math.min(1, p.wtPos + 0.5 * p.lfoDepth * lfoValue)))
         }
 
         // Phase F: generic breakpoint automation for every other automatable param (cutoff is
@@ -721,6 +801,10 @@ class Engine {
                 break
               case 'distortionMix': chain.distortion.wet.linearRampToValueAtTime(val, rampTime); break
               case 'bitcrushMix': chain.bitcrush.wet.linearRampToValueAtTime(val, rampTime); break
+              // not a ramped AudioParam — the spectrum steps once per tick, same limitation as
+              // the LFO->wtPos route above (which wins over this lane if both are active, per the
+              // documented last-write tradeoff)
+              case 'wtPos': if (p.osc === 'wavetable') this.applyMainOsc(chain, p, Math.max(0, Math.min(1, val))); break
             }
           }
         }
@@ -809,6 +893,9 @@ class Engine {
           if (p.osc2Level > 0) chain.osc2.triggerAttackRelease(freq * Math.pow(2, p.osc2Detune / 1200), dur, noteTime, noteObj.velocity)
           if (p.unisonVoices >= 3 && p.osc2Level > 0)
             chain.osc3.triggerAttackRelease(freq * Math.pow(2, -p.osc2Detune / 1200), dur, noteTime, noteObj.velocity)
+          for (const u of chain.uniPairs)
+            if (p.unisonVoices >= u.minVoices && p.osc2Level > 0)
+              u.poly.triggerAttackRelease(freq * Math.pow(2, (u.mul * p.osc2Detune) / 1200), dur, noteTime, noteObj.velocity)
           if (p.subLevel > 0) chain.sub.triggerAttackRelease(freq / 2, dur, noteTime, noteObj.velocity)
           if (p.noiseLevel > 0) chain.noise.triggerAttackRelease(dur, noteTime, noteObj.velocity)
           if (p.fmLevel > 0) chain.fm.triggerAttackRelease(freq, dur, noteTime, noteObj.velocity)
@@ -856,7 +943,10 @@ class Engine {
     const noise = new Tone.NoiseSynth({ noise: { type: 'white' } })
     const noiseGain = new Tone.Gain(p.noiseLevel)
     const env = { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release }
-    synth.set({ oscillator: { type: p.osc }, envelope: env })
+    // wavetable targets preview at their static wtPos (no per-note scanning — same phrase-note
+    // resolution tradeoff as the LFO sampling below)
+    if (p.osc === 'wavetable') synth.set({ oscillator: { type: 'custom', partials: wtPartials(p.wtTable, p.wtPos) }, envelope: env })
+    else synth.set({ oscillator: { type: p.osc }, envelope: env })
     osc2.set({ oscillator: { type: p.osc2Type }, envelope: env })
     sub.set({ oscillator: { type: 'sine' }, envelope: env })
     noise.set({ envelope: env })
@@ -875,7 +965,7 @@ class Engine {
     let end = 0
     for (const n of target.phrase) {
       const noteTime = now + n.time
-      const lfoValue = lfoOn ? Math.sin(2 * Math.PI * lfoRateHz * n.time) : 0
+      const lfoValue = lfoOn ? lfoWaveValue(p, lfoRateHz, n.time) : 0
       let freq = Tone.Frequency(n.pitch, 'midi').toFrequency()
       if (p.lfoDest === 'pitch' && lfoOn) freq *= Math.pow(2, (p.lfoDepth * lfoValue * 100) / 1200)
       synth.triggerAttackRelease(freq, n.dur, noteTime)

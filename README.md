@@ -22,7 +22,7 @@ Open http://localhost:5173/musiclearning/.
 Three modes, one instrument: **Lessons** (the guided curriculum), **Sandbox** (same gear,
 no rules), and **Track Lab** (deconstruct real songs from your own library).
 
-**108 lessons across 12 modules**, each with a task, hints, and a checker that gives
+**110 lessons across 12 modules**, each with a task, hints, and a checker that gives
 specific feedback (e.g. "Note 3 should be E3, but it's D#3"). Lessons marked ↻ are
 **drills**: randomized exercises you can reroll forever.
 
@@ -34,9 +34,10 @@ specific feedback (e.g. "Note 3 should be E3, but it's D#3"). Lessons marked ↻
 4. **Synthesis** — oscillators, filter, resonance, pluck/pad envelopes, sub bass, organ, strings
 5. **Ear Training** — four match-the-patch challenges, waveform-ID drill, find-the-cutoff drill
 6. **Serum Lab** — the synthesis curriculum translated into Xfer Serum's vocabulary:
-   the four-source layout, wavetables & WT POS, unison supersaw, the ENV 2 → cutoff pluck,
-   BPM-synced LFOs, the growl bass, FX-chain ordering, a reverse-engineer-the-preset ear
-   challenge, and an init-patch-to-finished-lead capstone
+   the four-source layout, a real wavetable oscillator (three tables, WT POS scanning,
+   LFO-modulatable), the 5/7-voice stereo-width supersaw, the ENV 2 → cutoff pluck,
+   BPM-synced LFOs, a draw-your-own LFO shape editor, the growl bass, FX-chain ordering,
+   a reverse-engineer-the-preset ear challenge, and an init-patch-to-finished-lead capstone
 7. **Drum Programming** — four-on-the-floor through full grooves, 16th drive, 3-against-4
 8. **Rhythm Styles** — breakbeat, boom bap, drum & bass, half-time, minimal techno,
    and a rhythm dictation drill (hear a random beat, program it back)
@@ -66,10 +67,12 @@ preloaded with a 4-track groove to mangle.
   scale rows highlighted in relevant lessons, Space = play/stop, full undo/redo
 - **Step sequencer** — 16-step, 5-lane synthesized 909-style kit (membrane kick,
   noise snare/clap, FM hats), swing control
-- **Synth device** — per-track subtractive/FM synth: main + second + sub oscillator with
-  noise, detune/unison spread, FM (harmonicity + mod index), glide, and an arpeggiator →
-  filter (cutoff, resonance, keytracking, velocity→cutoff, filter envelope) → ADSR →
-  two tempo-syncable LFOs and a one-knob macro
+- **Synth device** — per-track subtractive/FM synth: main oscillator (4 shapes **or a
+  wavetable** — three tables scanned by a WT POS knob) + second + sub oscillator with noise,
+  unison up to 7 voices with stereo width, FM (harmonicity + mod index), glide, and an
+  arpeggiator → filter (cutoff, resonance, keytracking, velocity→cutoff, filter envelope) →
+  ADSR → two tempo-syncable LFOs (LFO 1 takes a **hand-drawn 16-step shape** and can scan
+  the wavetable) and a one-knob macro
 - **Mixing chain per track** — 3-band EQ, compressor, distortion/bitcrusher (reorderable
   chain), sidechain ducking, reverb/delay sends, pan/volume — plus automation lanes in
   Sandbox and a master bus with limiter + level meter

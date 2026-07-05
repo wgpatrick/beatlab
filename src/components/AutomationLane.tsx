@@ -32,6 +32,7 @@ const PARAM_CONFIG: Record<AutomatableParam, ParamConfig> = {
   distortionMix: { label: 'Distortion Mix', min: 0, max: 1, format: (v) => `${Math.round(v * 100)}%` },
   bitcrushMix: { label: 'Bitcrush Mix', min: 0, max: 1, format: (v) => `${Math.round(v * 100)}%` },
   duckAmount: { label: 'Duck Depth', min: 0, max: 1, format: (v) => `${Math.round(v * 100)}%` },
+  wtPos: { label: 'WT Pos', min: 0, max: 1, format: (v) => `${Math.round(v * 100)}%` },
 }
 
 function valueToY(cfg: ParamConfig, v: number): number {

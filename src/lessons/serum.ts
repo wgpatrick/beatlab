@@ -17,9 +17,10 @@ import {
 // ================= MODULE: SERUM LAB =================
 // Everything from the Synthesis and Mixing modules, re-taught in Xfer Serum's vocabulary: each
 // lesson practices a technique on BeatLab's engine and says exactly where the same control lives
-// in Serum, so the skills carry over the moment a real copy of Serum is open. Concepts BeatLab's
-// engine can't literally do (wavetable scanning, warp modes, 16-voice unison) are taught by
-// building their nearest equivalent and naming the difference honestly in the summary.
+// in Serum, so the skills carry over the moment a real copy of Serum is open. Wave 3 gave the
+// engine a real wavetable oscillator (WT POS scanning), a drawable LFO shape, and 5/7-voice
+// stereo unison, so those lessons teach the real thing; concepts the engine still can't do
+// (warp modes, audio-rate modulation) are taught by nearest-equivalent and named honestly.
 
 const SERUM = 'Serum Lab'
 
@@ -103,16 +104,16 @@ const serumLessons: Lesson[] = [
     module: SERUM,
     title: 'Wavetables & the WT POS Knob',
     summary:
-      'Serum\'s headline feature: its oscillators don\'t hold ONE wave shape, they hold a WAVETABLE — a flipbook of up to 256 single-cycle waves — and the WT POS knob scans through the frames, morphing the timbre as it moves. BeatLab\'s oscillator has four fixed shapes, but you can hand-build one frame-crossfade: two oscillators, two different shapes, ZERO detune, blended. That blend knob IS a two-frame WT POS.',
-    task: 'Build the halfway frame: OSC A on SINE, OSC 2 on SAWTOOTH with DETUNE at 0 (within ±5 cents) so the two fuse into one new shape, and OSC 2 LEVEL between 35% and 65% — parked mid-morph between the two frames.',
+      'Serum\'s headline feature: its oscillators don\'t hold ONE wave shape, they hold a WAVETABLE — a whole book of spectra — and the WT POS knob scans through it, morphing the timbre as it moves. BeatLab\'s main oscillator has a real one: click WT and three tables appear. ANALOG morphs sine → triangle → saw → square; PWM narrows a square into a thin nasal pulse; VOCAL sweeps two formant peaks like a mouth changing vowels.',
+    task: 'Switch OSC A to WT, audition all three tables while the note holds (drag WT POS slowly through each), then park it on the VOCAL table with WT POS between 35% and 65% — mid-vowel.',
     hints: [
-      'Zero detune is the whole point: with no beating, your ear reads the sum as ONE fused waveform instead of two instruments playing together.',
-      'Sweep OSC 2\'s level from 0% to 100% while the note holds — that slow sine-into-saw morph is exactly what dragging WT POS does in Serum.',
-      'In Serum you\'d rarely turn WT POS by hand — you\'d drop an LFO or envelope on it and let the timbre move by itself. That\'s the next few lessons.',
+      'Hold a note first, THEN drag WT POS — the whole point is hearing the timbre morph under your finger.',
+      'WT POS at 0% and 100% are just the table\'s endpoints; the sounds nobody else has live in between.',
+      'In Serum you\'d rarely turn WT POS by hand — you\'d drop an LFO or envelope on it and let the timbre move by itself. That\'s the next lesson.',
     ],
     centerPitch: 48,
     setup: () => ({
-      tracks: [synthTrack('synth', 'Morph', '#61afef', { osc: 'sine', cutoff: 9000, attack: 0.01, decay: 0.2, sustain: 0.85, release: 0.4, osc2Type: 'sawtooth', osc2Level: 0, osc2Detune: 12, volume: -10 }, [n(45, 0, 16), n(52, 0, 16)])],
+      tracks: [synthTrack('synth', 'Morph', '#61afef', { osc: 'sine', cutoff: 9000, attack: 0.01, decay: 0.2, sustain: 0.85, release: 0.4, volume: -10 }, [n(45, 0, 16), n(52, 0, 16)])],
       loopBars: 1,
       bpm: 100,
       selectedTrackId: 'synth',
@@ -120,12 +121,45 @@ const serumLessons: Lesson[] = [
     validate: (ctx) => {
       const p = track(ctx, 'synth').synth
       const issues: string[] = []
-      if (p.osc !== 'sine') issues.push('OSC A should be SINE — frame 1 of your hand-built wavetable')
-      if (p.osc2Type !== 'sawtooth') issues.push('OSC 2 should be SAWTOOTH — frame 2')
-      if (Math.abs(p.osc2Detune) > 5) issues.push(`detune ${p.osc2Detune.toFixed(0)}c (needs to be 0, within ±5 — any beating and the two shapes stop fusing into one)`)
-      if (p.osc2Level < 0.35 || p.osc2Level > 0.65) issues.push(`OSC 2 level ${(p.osc2Level * 100).toFixed(0)}% (need 35–65% — parked halfway through the morph)`)
+      if (p.osc !== 'wavetable') issues.push('OSC A is still a fixed shape — click WT to load the wavetable oscillator')
+      if (p.osc === 'wavetable' && p.wtTable !== 'vocal') issues.push(`table is ${p.wtTable.toUpperCase()} (park on VOCAL for this one — but did you hear what the other two do?)`)
+      if (p.osc === 'wavetable' && (p.wtPos < 0.35 || p.wtPos > 0.65)) issues.push(`WT POS at ${(p.wtPos * 100).toFixed(0)}% (park 35–65% — mid-morph, between the vowels)`)
       if (issues.length) return fail('Not morphing yet — ' + issues.join('; ') + '.')
-      return pass('One fused shape, halfway between sine and saw — you just hand-cranked a wavetable position. Serum stores 256 of those in-between frames per table and gives you one knob (WT POS) to surf them.')
+      return pass('That knob is why Serum took over sound design: one continuous timbre axis per oscillator. Serum\'s tables hold up to 256 frames and you can draw or import your own — but the skill of PARKING a position by ear is exactly this.')
+    },
+  },
+  {
+    id: 'serum-wt-scan',
+    module: SERUM,
+    title: 'LFO → WT POS: Motion Sound Design',
+    summary:
+      'Parking WT POS gives you a sound; MODULATING it gives you sound design. In Serum the move is one drag — the LFO 1 tile onto the WT POS knob — and it\'s the engine behind most modern growls, talking basses and evolving pads: the spectrum itself moves, not just the filter in front of it. BeatLab\'s LFO now has a WT destination that does the same scan.',
+    task: 'OSC A on WT (any table), then aim the LFO at WT, switch SYNC on with a slow division (1/1 or 1/2), and push DEPTH to 40%+ — the timbre should visibly breathe through the table once per bar or two.',
+    hints: [
+      'This is NOT the filter wobble from the mixing module — the filter darkens what\'s there; WT scanning changes what the oscillator IS.',
+      'VOCAL table + slow LFO = the classic talking pad. PWM + faster LFO = vintage string-machine shimmer.',
+      'Static WT POS sets the center of the scan; DEPTH sets how far around it the LFO swings.',
+    ],
+    centerPitch: 48,
+    setup: () => ({
+      tracks: [
+        synthTrack('synth', 'Motion', '#61afef', { osc: 'wavetable', wtTable: 'vocal', wtPos: 0.5, cutoff: 9000, attack: 0.15, decay: 0.3, sustain: 0.85, release: 0.8, lfoDest: 'off', lfoDepth: 0, lfoSync: false, volume: -10 }, [n(45, 0, 16), n(52, 0, 16)]),
+        drumTrack({ kick: [0, 4, 8, 12] }),
+      ],
+      loopBars: 1,
+      bpm: 110,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.osc !== 'wavetable') issues.push('OSC A must be WT — there\'s no table to scan otherwise')
+      if (p.lfoDest !== 'wtPos') issues.push(`LFO destination is ${p.lfoDest.toUpperCase()} (aim it at WT)`)
+      if (!p.lfoSync) issues.push('SYNC is off — a scan that breathes with the track needs a note division')
+      if (p.lfoSync && p.lfoSyncRate !== '1/1' && p.lfoSyncRate !== '1/2') issues.push(`division is ${p.lfoSyncRate} (use 1/1 or 1/2 — evolving timbre wants slow motion)`)
+      if (p.lfoDepth < 0.4) issues.push(`depth ${(p.lfoDepth * 100).toFixed(0)}% (need ≥ 40% to sweep a real distance through the table)`)
+      if (issues.length) return fail('Not moving yet — ' + issues.join('; ') + '.')
+      return pass('The spectrum itself is breathing — that\'s the sound-design move that separates a preset user from a preset maker. In Serum: drag LFO 1 onto WT POS, done. Every growl bass tutorial on the internet starts here.')
     },
   },
   {
@@ -133,11 +167,12 @@ const serumLessons: Lesson[] = [
     module: SERUM,
     title: 'Unison: The Serum Supersaw',
     summary:
-      'Under each Serum oscillator sit three numbers that define modern EDM: UNISON (how many copies of the wave play at once, up to 16), DETUNE (how far the copies spread in pitch) and BLEND (center voice vs. outer voices). BeatLab\'s 3-voice unison is the same physics at demo scale: main voice, plus OSC 2 mirrored up and down. The recipe below is, step for step, how every trance and future-bass lead starts life in Serum.',
-    task: 'Serum-ify this thin lead: UNISON to 3 voices, BOTH oscillators on SAW, DETUNE between 15 and 45 cents, OSC 2 LEVEL 50%+, CUTOFF at 5 kHz or brighter, ATTACK ≤ 20ms.',
+      'Under each Serum oscillator sit the numbers that define modern EDM: UNISON (how many copies of the wave play at once, up to 16), DETUNE (how far the copies spread in pitch) and WIDTH (how far the copies spread in STEREO). BeatLab\'s unison now stacks up to 7 voices — outer pairs come in quieter and wider-detuned, exactly Serum\'s taper — with a WIDTH knob panning the pairs out left and right. The recipe below is, step for step, how every trance and future-bass lead starts life in Serum.',
+    task: 'Serum-ify this thin lead: UNISON to 5 or 7 voices, BOTH oscillators on SAW, DETUNE between 15 and 45 cents, OSC 2 LEVEL 50%+, WIDTH at 30%+, CUTOFF at 5 kHz or brighter, ATTACK ≤ 20ms.',
     hints: [
-      'In Serum this exact move reads: UNISON 7, DETUNE 0.15–0.25, BLEND around 75% — bigger numbers, identical idea.',
+      'In Serum this exact move reads: UNISON 7, DETUNE 0.15–0.25, WIDTH ~75% — same knobs, same physics.',
       'Detune under ~15 cents just sounds like volume; past ~45 it splits into separate pitches. The supersaw shimmer lives in between.',
+      'Toggle WIDTH between 0% and 70% while the loop plays (headphones!) — mono vs. wall-of-sound is the whole trance-lead trick.',
       'A supersaw wants to be bright — if the cutoff chokes it below 5 kHz the detune shimmer has no harmonics to shimmer with.',
     ],
     centerPitch: 64,
@@ -153,14 +188,15 @@ const serumLessons: Lesson[] = [
     validate: (ctx) => {
       const p = track(ctx, 'synth').synth
       const issues: string[] = []
-      if (p.unisonVoices < 3) issues.push(`unison at ${p.unisonVoices} voice(s) (need 3 — the full stack)`)
+      if (p.unisonVoices < 5) issues.push(`unison at ${p.unisonVoices} voice(s) (need 5 or 7 — the real stack)`)
       if (p.osc !== 'sawtooth' || p.osc2Type !== 'sawtooth') issues.push('both oscillators on SAW — it\'s called a superSAW for a reason')
       if (p.osc2Detune < 15 || p.osc2Detune > 45) issues.push(`detune ${p.osc2Detune.toFixed(0)}c (need 15–45 — the shimmer zone)`)
       if (p.osc2Level < 0.5) issues.push(`OSC 2 level ${(p.osc2Level * 100).toFixed(0)}% (need ≥ 50% so the outer voices carry real weight)`)
+      if (p.unisonWidth < 0.3) issues.push(`width ${(p.unisonWidth * 100).toFixed(0)}% (need ≥ 30% — a mono supersaw is half a supersaw)`)
       if (p.cutoff < 5000) issues.push(`cutoff ${Math.round(p.cutoff)} Hz (need ≥ 5 kHz — supersaws are bright by definition)`)
       if (p.attack > 0.02) issues.push(`attack ${(p.attack * 1000).toFixed(0)}ms (need ≤ 20ms)`)
       if (issues.length) return fail('Not super yet — ' + issues.join('; ') + '.')
-      return pass('That is the supersaw — the single most-used Serum sound in existence. In Serum, crank UNISON past 3 (try 7) and pull BLEND back and it only gets wider; the recipe you just built never changes.')
+      return pass('That is the supersaw — the single most-used Serum sound in existence, voices fanned across the stereo field just like Serum draws them. Same recipe there: UNISON 7, DETUNE to taste, WIDTH out.')
     },
   },
   {
@@ -230,6 +266,44 @@ const serumLessons: Lesson[] = [
       if (p.lfoDepth < 0.4) issues.push(`depth ${(p.lfoDepth * 100).toFixed(0)}% (need ≥ 40% to hear the swing)`)
       if (issues.length) return fail('Not locked yet — ' + issues.join('; ') + '.')
       return pass('Two wubs per beat, welded to the kick at any tempo — that\'s why Serum\'s LFOs ship with BPM sync already on. Hz is for when you WANT modulation to drift free of the grid.')
+    },
+  },
+  {
+    id: 'serum-draw-lfo',
+    module: SERUM,
+    title: 'Draw Your Own LFO',
+    summary:
+      'Serum\'s LFOs aren\'t stuck on sine — the LFO panel is a little EDITOR where you draw the shape: ramps, steps, lopsided humps, silence-then-spike. That drawing IS the rhythm of the wobble, which is why dubstep and future-bass producers spend more time in the LFO editor than anywhere else. BeatLab\'s LFO has the same move: hit ✎ DRAW and sketch 16 steps.',
+    task: 'Aim the LFO at CUTOFF, SYNC on at 1/1 (the drawing spreads over one bar), DEPTH 50%+, then hit ✎ DRAW and sketch a shape with real contrast — at least a 40% gap between its highest and lowest steps. Make the filter TALK.',
+    hints: [
+      'A slow descending staircase = the classic "yoy yoy" wobble. A spike on step 1 that dies flat = a pump. Try both.',
+      'The drawing loops: step 16 flows straight back into step 1, so think of it as a circle, not a line.',
+      'Flat drawings do nothing — the LFO only moves the cutoff as far as the shape itself moves.',
+    ],
+    centerPitch: 38,
+    setup: () => ({
+      tracks: [
+        drumTrack({ kick: [0, 4, 8, 12], clap: [4, 12], hat: [2, 6, 10, 14] }),
+        synthTrack('synth', 'Talker', '#e06c75', { osc: 'sawtooth', cutoff: 1500, resonance: 4, attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.3, lfoDest: 'cutoff', lfoDepth: 0.6, lfoSync: true, lfoSyncRate: '1/1', lfoShape: 'sine', volume: -9 }, [n(31, 0, 16)]),
+      ],
+      loopBars: 1,
+      bpm: 126,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.lfoDest !== 'cutoff') issues.push(`LFO destination is ${p.lfoDest.toUpperCase()} (aim it at CUTOFF)`)
+      if (p.lfoShape !== 'custom') issues.push('still on the sine — hit ✎ DRAW to open the shape editor')
+      if (p.lfoShape === 'custom') {
+        const span = Math.max(...p.lfoSteps) - Math.min(...p.lfoSteps)
+        if (span < 0.4) issues.push(`the drawing only spans ${(span * 100).toFixed(0)}% (need ≥ 40% between its highest and lowest steps — give it real contrast)`)
+      }
+      if (!p.lfoSync) issues.push('SYNC is off — the drawing should spread over a musical length')
+      if (p.lfoSync && p.lfoSyncRate !== '1/1' && p.lfoSyncRate !== '1/2') issues.push(`division is ${p.lfoSyncRate} (use 1/1 — one pass through the drawing per bar)`)
+      if (p.lfoDepth < 0.5) issues.push(`depth ${(p.lfoDepth * 100).toFixed(0)}% (need ≥ 50%)`)
+      if (issues.length) return fail('Not talking yet — ' + issues.join('; ') + '.')
+      return pass('You just drew a rhythm into the timbre itself — that exact editor is where every famous dubstep bass got its mouth. In Serum, right-click an LFO point for curves and grip handles; the thinking is identical.')
     },
   },
   {

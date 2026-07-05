@@ -1,6 +1,15 @@
 export type OscType = 'sine' | 'triangle' | 'sawtooth' | 'square'
+// Wave 3: the main oscillator can also be a wavetable — a bank of spectra scanned by wtPos
+// (Serum's WT POS). Only the main osc: osc2/osc3 stay classic shapes, like Serum's simpler SUB.
+export type MainOsc = OscType | 'wavetable'
+export type WtTable = 'analog' | 'pwm' | 'vocal'
 export type FilterType = 'lowpass' | 'bandpass' | 'highpass'
-export type LfoDest = 'off' | 'pitch' | 'cutoff' | 'amp'
+// 'wtPos' scans the wavetable position around its static value — only audible when osc is
+// 'wavetable' (silently inert otherwise, same convention as amp LFO on a muted track).
+export type LfoDest = 'off' | 'pitch' | 'cutoff' | 'amp' | 'wtPos'
+// LFO 1's shape: the classic sine, or a hand-drawn 16-step pattern (lfoSteps) — Serum's
+// draw-your-own-LFO, at this engine's per-step control resolution.
+export type LfoShape = 'sine' | 'custom'
 // Phase F: LFO 2's destination list is deliberately disjoint from the original LFO's (pitch/
 // cutoff/amp) — a second, independent modulation route rather than a shared matrix data
 // structure, so it adds real "more than one simultaneous mod route" capability without touching
@@ -15,7 +24,11 @@ export type InsertKind = 'eq' | 'comp' | 'dist'
 export type SyncDivision = '1/1' | '1/2' | '1/4' | '1/8' | '1/16' | '1/32' | '1/4t' | '1/8t' | '1/16t' | '1/4d' | '1/8d' | '1/16d'
 
 export interface SynthParams {
-  osc: OscType
+  osc: MainOsc
+  // wavetable scanning (only meaningful when osc === 'wavetable'): which built-in table, and the
+  // position through it (0 = first frame, 1 = last). wtPos is automatable and LFO-modulatable.
+  wtTable: WtTable
+  wtPos: number // 0..1
   cutoff: number // Hz
   resonance: number // filter Q
   filterType: FilterType
@@ -51,6 +64,11 @@ export interface SynthParams {
   // Hz rate was dialed in before).
   lfoSync: boolean
   lfoSyncRate: SyncDivision
+  // Drawn LFO shape (LFO 1 only): when lfoShape is 'custom' the LFO reads lfoSteps — 16 levels
+  // (0..1, mapped to the same bipolar range the sine covers) — instead of a sine. One full pass
+  // through the 16 steps = one LFO cycle, so a synced rate of 1/1 spreads the drawing over a bar.
+  lfoShape: LfoShape
+  lfoSteps: number[] // 16 values, 0..1
 
   // ---------- Phase E: mixing effects (insert chain: filter -> EQ/comp/dist in insertOrder -> panner) ----------
   eqLow: number // dB, -24..24
@@ -96,9 +114,12 @@ export interface SynthParams {
   fmModIndex: number // modulation index, ~1..20
   // Unison: 1 = just the main oscillator (today's default patch, unchanged). 2 = adds osc2 at
   // +osc2Detune (exactly today's existing behavior). 3 adds a third, symmetric voice mirrored at
-  // -osc2Detune, reusing osc2Type/osc2Level rather than new params — a real 3-voice unison stack,
-  // though without per-voice stereo panning (deferred — see docs/ROADMAP.md Phase H item 39).
-  unisonVoices: 1 | 2 | 3
+  // -osc2Detune, reusing osc2Type/osc2Level rather than new params. Wave 3: 5 and 7 add outer
+  // mirrored pairs at 1.6x and 2.4x the detune, at reduced level — Serum-style unison spread.
+  unisonVoices: 1 | 2 | 3 | 5 | 7
+  // Stereo width of the unison stack (0 = all voices center, exactly the old behavior; 1 = pairs
+  // panned hard outward). Only applies when unisonVoices >= 3 — a lone osc2 layer stays centered.
+  unisonWidth: number // 0..1
   // Glide/portamento: seconds to slide between consecutive notes' pitches, 0 = off (discrete
   // steps, matches every prior patch).
   glide: number
@@ -142,7 +163,7 @@ export type DrumPattern = Record<DrumLane, number[]>
 // lfoDest...) and structural fields (insertOrder, duckSource) that have no meaningful "in-between".
 export const AUTOMATABLE_PARAMS = [
   'cutoff', 'resonance', 'volume', 'pan', 'sendReverb', 'sendDelay', 'sendMod',
-  'eqLow', 'eqMid', 'eqHigh', 'compMix', 'distortionMix', 'bitcrushMix', 'duckAmount',
+  'eqLow', 'eqMid', 'eqHigh', 'compMix', 'distortionMix', 'bitcrushMix', 'duckAmount', 'wtPos',
 ] as const
 export type AutomatableParam = (typeof AUTOMATABLE_PARAMS)[number]
 export type AutomationMap = Partial<Record<AutomatableParam, AutomationPoint[]>>
@@ -222,8 +243,16 @@ export function noteName(pitch: number): string {
   return NOTE_NAMES[pitch % 12] + (Math.floor(pitch / 12) - 1)
 }
 
+// Default drawn LFO shape: one sine cycle sampled at 16 steps, so flipping to "draw" mode sounds
+// familiar until the user actually draws something.
+export const DEFAULT_LFO_STEPS: number[] = Array.from({ length: 16 }, (_, i) =>
+  Math.round((0.5 + 0.5 * Math.sin((2 * Math.PI * i) / 16)) * 100) / 100,
+)
+
 export const DEFAULT_SYNTH: SynthParams = {
   osc: 'sawtooth',
+  wtTable: 'analog',
+  wtPos: 0.5,
   cutoff: 9000,
   resonance: 0.8,
   filterType: 'lowpass',
@@ -250,6 +279,8 @@ export const DEFAULT_SYNTH: SynthParams = {
   lfoDest: 'off',
   lfoSync: false,
   lfoSyncRate: '1/4',
+  lfoShape: 'sine',
+  lfoSteps: DEFAULT_LFO_STEPS,
   eqLow: 0,
   eqMid: 0,
   eqHigh: 0,
@@ -276,6 +307,7 @@ export const DEFAULT_SYNTH: SynthParams = {
   fmHarmonicity: 1,
   fmModIndex: 5,
   unisonVoices: 1,
+  unisonWidth: 0,
   glide: 0,
   arpOn: false,
   arpRate: 2,
