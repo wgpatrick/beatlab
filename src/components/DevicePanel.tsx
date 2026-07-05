@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SynthParams, type Track } from '../types'
+import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SyncDivision, type SynthParams, type Track } from '../types'
 import { engine } from '../audio/engine'
 import { useStore } from '../state/store'
 import { Knob } from './Knob'
@@ -38,9 +38,12 @@ const LFO2_DESTS: { dest: Lfo2Dest; label: string }[] = [
   { dest: 'distortionMix', label: 'Dist Mix' },
 ]
 
+const SYNC_DIVISIONS: SyncDivision[] = ['1/1', '1/2', '1/4', '1/8', '1/16', '1/32', '1/4d', '1/8d', '1/16d', '1/4t', '1/8t', '1/16t']
+
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`)
 const ms = (v: number) => (v >= 1 ? `${v.toFixed(1)}s` : `${Math.round(v * 1000)}ms`)
 const pct = (v: number) => `${Math.round(v * 100)}%`
+const lfoHz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(2)}kHz` : `${v.toFixed(v < 1 ? 2 : 1)}Hz`)
 const cents = (v: number) => `${v >= 0 ? '+' : ''}${Math.round(v)}c`
 const db = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}dB`
 const ratio = (v: number) => `${v.toFixed(1)}:1`
@@ -375,9 +378,43 @@ export function DevicePanel({ track }: { track: Track }) {
               ))}
             </div>
           )}
-          <div className="knob-row">
-            {visible('lfoRate') && (
-              <Knob label="Rate" value={p.lfoRate} min={0.02} max={20} log format={(v) => `${v.toFixed(v < 1 ? 2 : 1)}Hz`} status={statusOf('lfoRate')} onChange={(v) => set({ lfoRate: v })} hint="LFO speed, in cycles per second" />
+          <div className="knob-row" style={{ alignItems: 'center' }}>
+            {visible('lfoRate') && !p.lfoSync && (
+              <Knob
+                label="Rate"
+                value={p.lfoRate}
+                min={0.02}
+                max={1000}
+                log
+                format={lfoHz}
+                status={statusOf('lfoRate')}
+                onChange={(v) => set({ lfoRate: v })}
+                hint="LFO speed in Hz. Above roughly 20Hz this app's per-16th-note-step sampling starts to alias into a stepped, buzzy texture rather than a clean fast wobble — a real, honest limitation (not audio-rate FM), though a genuinely usable lo-fi sound in its own right."
+              />
+            )}
+            {visible('lfoSync') && p.lfoSync && (
+              <select
+                className="duck-source-select"
+                style={{ marginBottom: 0 }}
+                value={p.lfoSyncRate}
+                onChange={(e) => set({ lfoSyncRate: e.target.value as SyncDivision })}
+                title="LFO rate as a note division of the current tempo, instead of a free Hz value"
+              >
+                {SYNC_DIVISIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            )}
+            {visible('lfoSync') && (
+              <button
+                className={`wave lfo-sync-btn ${p.lfoSync ? 'on' : ''}`}
+                onClick={() => set({ lfoSync: !p.lfoSync })}
+                title="Lock the LFO's rate to the song tempo (a note division) instead of a free Hz value"
+              >
+                Sync
+              </button>
             )}
             {visible('lfoDepth') && (
               <Knob label="Depth" value={p.lfoDepth} min={0} max={1} format={pct} status={statusOf('lfoDepth')} onChange={(v) => set({ lfoDepth: v })} hint="How far the LFO swings its destination — 0 = no audible effect" />
@@ -396,9 +433,43 @@ export function DevicePanel({ track }: { track: Track }) {
               ))}
             </select>
           )}
-          <div className="knob-row">
-            {visible('lfo2Rate') && (
-              <Knob label="Rate" value={p.lfo2Rate} min={0.02} max={20} log format={(v) => `${v.toFixed(v < 1 ? 2 : 1)}Hz`} status={statusOf('lfo2Rate')} onChange={(v) => set({ lfo2Rate: v })} hint="LFO 2 speed, in cycles per second" />
+          <div className="knob-row" style={{ alignItems: 'center' }}>
+            {visible('lfo2Rate') && !p.lfo2Sync && (
+              <Knob
+                label="Rate"
+                value={p.lfo2Rate}
+                min={0.02}
+                max={1000}
+                log
+                format={lfoHz}
+                status={statusOf('lfo2Rate')}
+                onChange={(v) => set({ lfo2Rate: v })}
+                hint="LFO 2 speed in Hz. Same step-sampling limitation as LFO 1's Rate — above ~20Hz it aliases into a buzzy texture rather than clean audio-rate modulation."
+              />
+            )}
+            {visible('lfo2Sync') && p.lfo2Sync && (
+              <select
+                className="duck-source-select"
+                style={{ marginBottom: 0 }}
+                value={p.lfo2SyncRate}
+                onChange={(e) => set({ lfo2SyncRate: e.target.value as SyncDivision })}
+                title="LFO 2 rate as a note division of the current tempo, instead of a free Hz value"
+              >
+                {SYNC_DIVISIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            )}
+            {visible('lfo2Sync') && (
+              <button
+                className={`wave lfo-sync-btn ${p.lfo2Sync ? 'on' : ''}`}
+                onClick={() => set({ lfo2Sync: !p.lfo2Sync })}
+                title="Lock LFO 2's rate to the song tempo (a note division) instead of a free Hz value"
+              >
+                Sync
+              </button>
             )}
             {visible('lfo2Depth') && (
               <Knob label="Depth" value={p.lfo2Depth} min={0} max={1} format={pct} status={statusOf('lfo2Depth')} onChange={(v) => set({ lfo2Depth: v })} hint="How far LFO 2 swings its destination — 0 = no audible effect" />

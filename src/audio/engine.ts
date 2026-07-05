@@ -1,6 +1,18 @@
 import * as Tone from 'tone'
-import { DRUM_LANES, type AutomatableParam, type AutomationPoint, type DrumLane, type InsertKind, type SynthParams, type TargetPatch, type Track } from '../types'
+import { DRUM_LANES, type AutomatableParam, type AutomationPoint, type DrumLane, type InsertKind, type SyncDivision, type SynthParams, type TargetPatch, type Track } from '../types'
 import { useStore } from '../state/store'
+
+// Tempo-synced LFO rate: each division's length in quarter-note beats (t = triplet, 2/3 the
+// normal length so it fits 3-in-the-space-of-2, i.e. faster; d = dotted, 1.5x the normal length,
+// i.e. slower). rateHz = one cycle per that many beats, scaled by the current bpm.
+const DIVISION_BEATS: Record<SyncDivision, number> = {
+  '1/1': 4, '1/2': 2, '1/4': 1, '1/8': 0.5, '1/16': 0.25, '1/32': 0.125,
+  '1/4t': 2 / 3, '1/8t': 1 / 3, '1/16t': 1 / 6,
+  '1/4d': 1.5, '1/8d': 0.75, '1/16d': 0.375,
+}
+function syncedRateHz(bpm: number, division: SyncDivision): number {
+  return bpm / 60 / DIVISION_BEATS[division]
+}
 
 // Interpolates between breakpoints (frac: 0..1 through the loop). `log` compares in log-space —
 // used only for cutoff, since frequency perception is logarithmic (a linear sweep rushes at the
@@ -594,9 +606,13 @@ class Engine {
         const p = tr.synth
         // sampled once per 16th-note step (not audio-rate) — cheap and matches the resolution of
         // every other per-step modulation here (swing, cutoff automation); plenty smooth at the
-        // slow rates an LFO is used for in this app.
+        // slow rates an LFO is used for in this app. Rates well above the ~8-16Hz step-sampling
+        // rate at typical tempos alias into a stepped/buzzy texture rather than a clean fast
+        // wobble — a real, audible limitation of sampling once per step, not a bug (see the Rate
+        // knob's tooltip). Tempo sync (lfoSync) just changes what feeds this same Hz value.
         const lfoOn = p.lfoDest !== 'off' && p.lfoDepth > 0
-        const lfoValue = lfoOn ? Math.sin(2 * Math.PI * p.lfoRate * time) : 0
+        const lfoRateHz = p.lfoSync ? syncedRateHz(s.bpm, p.lfoSyncRate) : p.lfoRate
+        const lfoValue = lfoOn ? Math.sin(2 * Math.PI * lfoRateHz * time) : 0
 
         const cutoffAuto = tr.automation?.cutoff
         let baseCutoff = p.cutoff
@@ -650,7 +666,8 @@ class Engine {
         // (see Lfo2Dest in types.ts), additive on top of that destination's static/automated value.
         const lfo2On = p.lfo2Dest !== 'off' && p.lfo2Depth > 0
         if (lfo2On) {
-          const lfo2Value = Math.sin(2 * Math.PI * p.lfo2Rate * time)
+          const lfo2RateHz = p.lfo2Sync ? syncedRateHz(s.bpm, p.lfo2SyncRate) : p.lfo2Rate
+          const lfo2Value = Math.sin(2 * Math.PI * lfo2RateHz * time)
           const d = p.lfo2Depth * lfo2Value
           const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
           switch (p.lfo2Dest) {
@@ -790,11 +807,12 @@ class Engine {
     // driving a one-shot preview like this) — same tradeoff as the main tick(), just at phrase-note
     // resolution instead of 16th-note resolution.
     const lfoOn = p.lfoDest !== 'off' && p.lfoDepth > 0
+    const lfoRateHz = p.lfoSync ? syncedRateHz(useStore.getState().bpm, p.lfoSyncRate) : p.lfoRate
     const now = Tone.now() + 0.05
     let end = 0
     for (const n of target.phrase) {
       const noteTime = now + n.time
-      const lfoValue = lfoOn ? Math.sin(2 * Math.PI * p.lfoRate * n.time) : 0
+      const lfoValue = lfoOn ? Math.sin(2 * Math.PI * lfoRateHz * n.time) : 0
       let freq = Tone.Frequency(n.pitch, 'midi').toFrequency()
       if (p.lfoDest === 'pitch' && lfoOn) freq *= Math.pow(2, (p.lfoDepth * lfoValue * 100) / 1200)
       synth.triggerAttackRelease(freq, n.dur, noteTime)

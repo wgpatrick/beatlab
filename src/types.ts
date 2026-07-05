@@ -10,6 +10,9 @@ export type Lfo2Dest = 'off' | 'pan' | 'sendReverb' | 'sendDelay' | 'sendMod' | 
 // is distortion chained into bitcrusher internally (a fixed sub-order) — only the three slots as
 // a block are reorderable, matching the roadmap's "EQ -> compressor -> distortion" default chain.
 export type InsertKind = 'eq' | 'comp' | 'dist'
+// Tempo-synced LFO rate, as a fraction of a whole note (t = triplet, d = dotted) — when an LFO is
+// synced its rate is derived from the current BPM instead of read directly from *Rate (Hz).
+export type SyncDivision = '1/1' | '1/2' | '1/4' | '1/8' | '1/16' | '1/32' | '1/4t' | '1/8t' | '1/16t' | '1/4d' | '1/8d' | '1/16d'
 
 export interface SynthParams {
   osc: OscType
@@ -40,9 +43,14 @@ export interface SynthParams {
   filterEnvSustain: number // 0..1, fraction of the sweep held during the note
   filterEnvRelease: number
   // one LFO, fixed destination list (mirrors the reference course's synth), lfoDest 'off' = no effect
-  lfoRate: number // Hz
+  lfoRate: number // Hz, up to 1kHz — see the Rate knob's hint for what happens above ~20Hz
   lfoDepth: number // 0..1
   lfoDest: LfoDest
+  // Tempo sync: when on, the LFO's rate is derived from bpm + lfoSyncRate instead of read from
+  // lfoRate directly (lfoRate itself is left untouched so flipping sync off returns to whatever
+  // Hz rate was dialed in before).
+  lfoSync: boolean
+  lfoSyncRate: SyncDivision
 
   // ---------- Phase E: mixing effects (insert chain: filter -> EQ/comp/dist in insertOrder -> panner) ----------
   eqLow: number // dB, -24..24
@@ -70,9 +78,11 @@ export interface SynthParams {
   duckAmount: number // 0..1
 
   // ---------- Phase F: modulation matrix expansion (LFO 2) + macro ----------
-  lfo2Rate: number // Hz
+  lfo2Rate: number // Hz, up to 1kHz
   lfo2Depth: number // 0..1
   lfo2Dest: Lfo2Dest
+  lfo2Sync: boolean
+  lfo2SyncRate: SyncDivision
   // Fixed single macro (not a user-remappable target list — see docs/ROADMAP.md Phase F item 30
   // for the scoping note): one knob drives cutoff, reverb send, and distortion mix together.
   macroValue: number // 0..1
@@ -238,6 +248,8 @@ export const DEFAULT_SYNTH: SynthParams = {
   lfoRate: 4,
   lfoDepth: 0,
   lfoDest: 'off',
+  lfoSync: false,
+  lfoSyncRate: '1/4',
   eqLow: 0,
   eqMid: 0,
   eqHigh: 0,
@@ -257,6 +269,8 @@ export const DEFAULT_SYNTH: SynthParams = {
   lfo2Rate: 3,
   lfo2Depth: 0,
   lfo2Dest: 'off',
+  lfo2Sync: false,
+  lfo2SyncRate: '1/4',
   macroValue: 0,
   fmLevel: 0,
   fmHarmonicity: 1,

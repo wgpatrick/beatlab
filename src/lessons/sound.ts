@@ -37,7 +37,7 @@ const P_FULL: (keyof SynthParams)[] = [...P_RESONANCE, 'attack', 'decay', 'susta
 // Phase D: synth engine depth, same cumulative-reveal pattern as the original four stages above.
 const P_OSCBANK: (keyof SynthParams)[] = [...P_FULL, 'osc2Type', 'osc2Level', 'osc2Detune', 'subLevel', 'noiseLevel']
 const P_FILTERENV: (keyof SynthParams)[] = [...P_OSCBANK, 'filterEnvAmount', 'filterEnvAttack', 'filterEnvDecay', 'filterEnvSustain', 'filterEnvRelease']
-const P_LFO: (keyof SynthParams)[] = [...P_FILTERENV, 'lfoRate', 'lfoDepth', 'lfoDest']
+const P_LFO: (keyof SynthParams)[] = [...P_FILTERENV, 'lfoRate', 'lfoDepth', 'lfoDest', 'lfoSync', 'lfoSyncRate']
 const P_FILTERTYPE: (keyof SynthParams)[] = [...P_LFO, 'filterType']
 const P_EFFECTS: (keyof SynthParams)[] = [...P_FILTERTYPE, 'pan', 'sendReverb', 'sendDelay']
 // Phase E: mixing effects — same cumulative-reveal pattern.
@@ -46,7 +46,7 @@ const P_COMP: (keyof SynthParams)[] = [...P_EQ, 'compThreshold', 'compRatio', 'c
 const P_DIST: (keyof SynthParams)[] = [...P_COMP, 'distortionAmount', 'distortionMix', 'bitcrushBits', 'bitcrushMix']
 const P_MIX: (keyof SynthParams)[] = [...P_DIST, 'insertOrder', 'sendMod', 'duckSource', 'duckAmount']
 // Phase F: modulation matrix (LFO2) + macro — same cumulative-reveal pattern.
-const P_MOD: (keyof SynthParams)[] = [...P_MIX, 'lfo2Rate', 'lfo2Depth', 'lfo2Dest', 'macroValue']
+const P_MOD: (keyof SynthParams)[] = [...P_MIX, 'lfo2Rate', 'lfo2Depth', 'lfo2Dest', 'lfo2Sync', 'lfo2SyncRate', 'macroValue']
 // Phase H: synth engine depth II — same cumulative-reveal pattern.
 const P_SYNTH2: (keyof SynthParams)[] = [
   ...P_MOD,
