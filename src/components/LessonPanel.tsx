@@ -20,6 +20,37 @@ export function LessonPanel() {
   const nextLesson = useStore((s) => s.nextLesson)
   const loadLesson = useStore((s) => s.loadLesson)
 
+  // In Track Lab, keep a Track Deconstruction lesson's panel live (so Check works without
+  // leaving the view); for any other lesson, show the deconstruction method itself.
+  const inTrackLab = mode === 'tracklab'
+  if (inTrackLab && findLesson(currentLessonId)?.module !== 'Track Deconstruction') {
+    return (
+      <aside className="lesson-panel">
+        <div className="lesson-module">TRACK LAB</div>
+        <h2>Deconstruct a Song</h2>
+        <p className="lesson-summary">
+          The exercise producers swear by: take a track you love apart until you can see why it
+          works. BeatLab draws the X-ray — the listening is the workout.
+        </p>
+        <div className="task-box">
+          <div className="task-label">THE METHOD</div>
+          <ol className="tl-method">
+            <li><b>Count bars.</b> Sections in dance music run in multiples of 8 — 8/16/32 bars.</li>
+            <li><b>Map the structure.</b> Label every section. Loop it first; trust your ears over the detector.</li>
+            <li><b>Watch the LOW strip.</b> Where the bass vanishes is the breakdown; where it slams back is the drop.</li>
+            <li><b>Table the elements.</b> Per section, list every layer you hear — kick, sub, hats, chords, FX.</li>
+            <li><b>Steal the skeleton.</b> Export the structure as a template and build your own track on it.</li>
+            <li><b>Steal the break.</b> Chop the best groove onto the pads and flip it.</li>
+          </ol>
+        </div>
+        <p className="lesson-summary">
+          There's a guided version of all six steps in the <b>Track Deconstruction</b> module in the
+          curriculum sidebar.
+        </p>
+      </aside>
+    )
+  }
+
   if (mode === 'sandbox') {
     return (
       <aside className="lesson-panel">

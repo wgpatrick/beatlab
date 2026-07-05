@@ -11,6 +11,7 @@ export function TransportBar() {
   const setBpm = useStore((s) => s.setBpm)
   const setSwing = useStore((s) => s.setSwing)
   const goToSandbox = useStore((s) => s.goToSandbox)
+  const goToTrackLab = useStore((s) => s.goToTrackLab)
   const loadLesson = useStore((s) => s.loadLesson)
   const currentLessonId = useStore((s) => s.currentLessonId)
   const past = useStore((s) => s.past)
@@ -158,6 +159,13 @@ export function TransportBar() {
         </button>
         <button className={mode === 'sandbox' ? 'on' : ''} onClick={goToSandbox}>
           Sandbox
+        </button>
+        <button
+          className={mode === 'tracklab' ? 'on' : ''}
+          title="Import any song you own and deconstruct it: tempo, energy, bands, structure"
+          onClick={goToTrackLab}
+        >
+          Track Lab
         </button>
       </div>
     </header>

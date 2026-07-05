@@ -10,6 +10,7 @@ import { ArrangementView } from './components/ArrangementView'
 import { DevicePanel } from './components/DevicePanel'
 import { SceneLauncher } from './components/SceneLauncher'
 import { AutomationLane } from './components/AutomationLane'
+import { TrackLab } from './components/TrackLab'
 
 // Drag-to-resize for the device panel's height and the lesson panel's width. Persists to
 // localStorage so a preferred layout survives a reload. `invert` flips which drag direction grows
@@ -83,6 +84,11 @@ export default function App() {
     <div className="app" style={{ gridTemplateColumns: `225px 1fr 6px ${lessonPanel.size}px` }}>
       <TransportBar />
       <LessonSidebar />
+      {mode === 'tracklab' ? (
+        <main className="main">
+          <TrackLab />
+        </main>
+      ) : (
       <main className="main">
         <TrackStrip />
         {mode === 'sandbox' && <SceneLauncher />}
@@ -109,6 +115,7 @@ export default function App() {
           {selected && <DevicePanel track={selected} />}
         </div>
       </main>
+      )}
       <div className="resize-handle-x" title="Drag to resize the lesson panel" onPointerDown={lessonPanel.onPointerDown} />
       <LessonPanel />
     </div>

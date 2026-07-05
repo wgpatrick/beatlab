@@ -6,6 +6,9 @@ import { handleMidiNoteOff, handleMidiNoteOn, releaseAllHeld } from '../audio/mi
 import { setComputerKeyboardEnabled as setComputerKeyboardListening, setComputerKeyboardHandlers } from '../audio/computerKeyboard'
 import { findLesson, LESSONS, nextLessonId, sandboxTracks, type Lesson, type LessonParams } from '../lessons/curriculum'
 import type { ScoreMap } from '../lessons/framework'
+import { GROOVE_STEPS, bassGrooveNotes, chordProgressionNotes, drumTrack, melodyNotes, synthTrack } from '../lessons/framework'
+import { analyzeAudioBuffer, sectionAvg } from '../audio/analysis'
+import { emptyTrackLab, type TrackLabState } from './trackLabState'
 
 let clipCounter = 0
 let sceneCounter = 0
@@ -59,7 +62,7 @@ export interface AppState {
   noteLength: number
   noteVelocity: number
   swing: number
-  mode: 'lesson' | 'sandbox'
+  mode: 'lesson' | 'sandbox' | 'tracklab'
   currentLessonId: string
   completed: string[]
   arrangement: ArrangementState
@@ -95,6 +98,9 @@ export interface AppState {
   /** "Musical typing" — a plain computer keyboard standing in for a MIDI keyboard, for anyone
    * without real MIDI hardware. Feeds the exact same recording/live-play pipeline as real MIDI. */
   computerKeyboardEnabled: boolean
+  /** Track Lab (full-song deconstruction): analysis results + the student's structure map.
+   * The audio buffer itself lives on the engine. */
+  trackLab: TrackLabState
 
   lesson: () => Lesson | undefined
   selectTrack: (id: string) => void
@@ -143,6 +149,19 @@ export interface AppState {
   toggleRecording: () => void
   setQuantizeStrength: (v: number) => void
   recordNote: (trackId: string, note: Omit<Note, 'id'>) => void
+  goToTrackLab: () => void
+  loadTrackLabFile: (file: File) => Promise<void>
+  setTrackLabLabel: (index: number, type: SectionType) => void
+  setTrackLabNote: (index: number, text: string) => void
+  /** re-run the analysis at a corrected tempo (the x2 / ÷2 half/double-time fix) */
+  setTrackLabBpmFactor: (factor: number) => void
+  setTrackLabFeedback: (fb: { pass: boolean; message: string } | null) => void
+  /** loop one detected section (null stops playback) */
+  playTrackLabSection: (index: number | null) => void
+  /** slice the first bars of a section onto the Phase I drum sampler pads */
+  chopTrackLabSection: (index: number) => void
+  /** export the labeled structure map as a sandbox arrangement (energy grid) */
+  useTrackLabTemplate: () => void
 }
 
 const firstLesson = (() => {
@@ -182,6 +201,7 @@ export const useStore = create<AppState>()((set, get) => ({
   sampleLoaded: null,
   masterLevel: null,
   computerKeyboardEnabled: false,
+  trackLab: emptyTrackLab(),
 
   lesson: () => (get().mode === 'lesson' ? findLesson(get().currentLessonId) : undefined),
 
@@ -305,6 +325,8 @@ export const useStore = create<AppState>()((set, get) => ({
     if (!lesson) return
     const state = get()
     if (state.isPlaying) state.stop()
+    engine.stopTrackLab()
+    if (state.trackLab.playingSection !== null) set({ trackLab: { ...state.trackLab, playingSection: null } })
     const snapshot =
       state.mode === 'sandbox'
         ? { tracks: state.tracks, bpm: state.bpm, loopBars: state.loopBars, selectedTrackId: state.selectedTrackId, scenes: state.scenes }
@@ -335,6 +357,8 @@ export const useStore = create<AppState>()((set, get) => ({
     const state = get()
     if (state.mode === 'sandbox') return
     if (state.isPlaying) state.stop()
+    engine.stopTrackLab()
+    if (state.trackLab.playingSection !== null) set({ trackLab: { ...state.trackLab, playingSection: null } })
     const snap = state.sandboxSnapshot ?? {
       tracks: sandboxTracks(),
       bpm: 124,
@@ -364,7 +388,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const state = get()
     const lesson = findLesson(state.currentLessonId)
     if (!lesson) return
-    const result = lesson.validate({ tracks: state.tracks, arrangement: state.arrangement, params: state.lessonParams, sampleLoaded: state.sampleLoaded })
+    const result = lesson.validate({ tracks: state.tracks, arrangement: state.arrangement, params: state.lessonParams, sampleLoaded: state.sampleLoaded, trackLab: state.trackLab })
     let completed = state.completed
     if (result.pass && !completed.includes(lesson.id)) {
       completed = [...completed, lesson.id]
@@ -691,6 +715,177 @@ export const useStore = create<AppState>()((set, get) => ({
         t.id === trackId ? { ...t, notes: [...t.notes, { id: `u${noteCounter++}`, ...note }] } : t,
       ),
     })
+  },
+
+  // ---------- Track Lab: full-song deconstruction ----------
+  // The imported audio lives on the engine; everything here is the serializable analysis +
+  // the student's structure map (see state/trackLabState.ts). The grading logic lives with the
+  // Track Deconstruction lessons (lessons/deconstruction.ts) so the in-view CHECK MAP button
+  // and the lesson's own Check use the identical grader.
+
+  goToTrackLab: () => {
+    const state = get()
+    if (state.mode === 'tracklab') return
+    if (state.isPlaying) state.stop()
+    // same snapshot semantics as loadLesson: leaving the sandbox keeps its contents restorable
+    const snapshot =
+      state.mode === 'sandbox'
+        ? { tracks: state.tracks, bpm: state.bpm, loopBars: state.loopBars, selectedTrackId: state.selectedTrackId, scenes: state.scenes }
+        : state.sandboxSnapshot
+    set({ mode: 'tracklab', sandboxSnapshot: snapshot, feedback: null })
+  },
+
+  loadTrackLabFile: async (file) => {
+    const state = get()
+    if (state.isPlaying) state.stop()
+    engine.stopTrackLab()
+    set({ trackLab: { ...emptyTrackLab(), status: 'analyzing', fileName: file.name } })
+    // yield a frame so the "analyzing" state paints before the synchronous DSP pass below
+    await new Promise((r) => setTimeout(r, 30))
+    try {
+      const buffer = await engine.decodeAudioFile(file)
+      engine.setTrackLabBuffer(buffer)
+      const analysis = analyzeAudioBuffer(buffer)
+      set({
+        trackLab: {
+          ...emptyTrackLab(),
+          status: 'ready',
+          fileName: file.name,
+          analysis,
+          labels: Array(analysis.sections.length).fill(null),
+          notes: Array(analysis.sections.length).fill(''),
+        },
+      })
+    } catch (err) {
+      engine.setTrackLabBuffer(null)
+      set({
+        trackLab: {
+          ...emptyTrackLab(),
+          status: 'error',
+          fileName: file.name,
+          error: err instanceof Error ? err.message : 'Could not decode this file as audio.',
+        },
+      })
+    }
+  },
+
+  setTrackLabLabel: (index, type) => {
+    const tl = get().trackLab
+    set({ trackLab: { ...tl, labels: tl.labels.map((l, i) => (i === index ? type : l)), feedback: null } })
+  },
+
+  setTrackLabNote: (index, text) => {
+    const tl = get().trackLab
+    set({ trackLab: { ...tl, notes: tl.notes.map((n, i) => (i === index ? text : n)) } })
+  },
+
+  setTrackLabBpmFactor: (factor) => {
+    const tl = get().trackLab
+    const buffer = engine.getTrackLabBuffer()
+    if (!tl.analysis || !buffer) return
+    engine.stopTrackLab()
+    const analysis = analyzeAudioBuffer(buffer, { forceBpm: tl.analysis.bpm * factor })
+    // the bar grid changed, so the section list (and any labels/notes on it) must reset too
+    set({
+      trackLab: {
+        ...tl,
+        analysis,
+        labels: Array(analysis.sections.length).fill(null),
+        notes: Array(analysis.sections.length).fill(''),
+        feedback: null,
+        playingSection: null,
+      },
+    })
+  },
+
+  setTrackLabFeedback: (fb) => set({ trackLab: { ...get().trackLab, feedback: fb } }),
+
+  playTrackLabSection: (index) => {
+    const tl = get().trackLab
+    if (index === null || !tl.analysis) {
+      engine.stopTrackLab()
+      set({ trackLab: { ...tl, playingSection: null } })
+      return
+    }
+    const state = get()
+    if (state.isPlaying) state.stop()
+    const sec = tl.analysis.sections[index]
+    if (!sec) return
+    const start = tl.analysis.firstBeatSec + sec.startBar * tl.analysis.barSec
+    const dur = (sec.endBar - sec.startBar) * tl.analysis.barSec
+    void engine.playTrackLabRange(start, dur)
+    set({ trackLab: { ...tl, playingSection: index } })
+  },
+
+  chopTrackLabSection: (index) => {
+    const tl = get().trackLab
+    if (!tl.analysis) return
+    const sec = tl.analysis.sections[index]
+    if (!sec) return
+    // chop the section's first 2 bars (or 1 if it's that short) -- a classic loop length; the
+    // sampler then splits whatever it gets into 5 equal pad slices (Phase I region mode)
+    const bars = Math.min(2, sec.endBar - sec.startBar)
+    const start = tl.analysis.firstBeatSec + sec.startBar * tl.analysis.barSec
+    const dur = bars * tl.analysis.barSec
+    const slice = engine.sliceTrackLabRange(start, dur)
+    if (!slice) return
+    engine.loadDrumSampleFromBuffer(slice, `${tl.fileName ?? 'track'} · bars ${sec.startBar + 1}–${sec.startBar + bars}`)
+    set({
+      trackLab: {
+        ...get().trackLab,
+        chopped: true,
+        feedback: {
+          pass: true,
+          message: `Chopped bars ${sec.startBar + 1}–${sec.startBar + bars} onto the drum pads, split into 5 slices. Any step sequencer now plays them — head to a lesson or the Sandbox and flip the break.`,
+        },
+      },
+    })
+  },
+
+  useTrackLabTemplate: () => {
+    const tl = get().trackLab
+    const a = tl.analysis
+    if (!a || tl.labels.length === 0 || tl.labels.some((l) => l === null)) return
+    engine.stopTrackLab()
+    // scaled miniature: each analyzed section becomes one 2-bar slot in the energy grid
+    // (capped at 8 slots -- the grid's readable width -- favoring the front of the track)
+    const count = Math.min(8, a.sections.length)
+    const sections = (tl.labels as SectionType[]).slice(0, count)
+    const used = a.sections.slice(0, count)
+    const avgs = used.map((sec) => sectionAvg(a, sec))
+    const maxOf = (k: 'rms' | 'low' | 'mid' | 'high') => Math.max(1e-6, ...avgs.map((x) => x[k]))
+    const mr = maxOf('rms'), ml = maxOf('low'), mm = maxOf('mid'), mh = maxOf('high')
+    // starting guess from the band analysis: low band => drums+bass, mids => chords, highs => lead
+    const active: Record<string, boolean[]> = {
+      drums: avgs.map((x) => x.rms > 0.5 * mr),
+      bass: avgs.map((x) => x.low > 0.5 * ml),
+      chords: avgs.map((x) => x.mid > 0.55 * mm),
+      lead: avgs.map((x) => x.high > 0.6 * mh),
+    }
+    const bars = count * 2
+    const tracks = [
+      drumTrack(GROOVE_STEPS),
+      synthTrack('bass', 'Bass', '#56b6c2', { osc: 'sawtooth', cutoff: 700, attack: 0.005, decay: 0.25, sustain: 0.3, release: 0.15, volume: -8 }, bassGrooveNotes(bars)),
+      synthTrack('chords', 'Chords', '#f7c948', { osc: 'triangle', cutoff: 3500, attack: 0.4, decay: 0.4, sustain: 0.6, release: 1.2, volume: -14 }, chordProgressionNotes(bars)),
+      synthTrack('lead', 'Lead', '#c678dd', { osc: 'square', cutoff: 4500, attack: 0.01, decay: 0.3, sustain: 0.2, release: 0.4, volume: -14 }, melodyNotes(bars)),
+    ]
+    set({
+      mode: 'sandbox',
+      tracks,
+      bpm: Math.min(200, Math.max(60, Math.round(a.bpm))),
+      loopBars: bars,
+      selectedTrackId: 'drums',
+      arrangement: { enabled: true, mode: 'energy', sections, barsPerSection: 2, active },
+      scenes: [],
+      feedback: null,
+      paramScores: null,
+      currentStep: -1,
+      noteLength: 2,
+      past: [],
+      future: [],
+      trackLab: { ...tl, templated: true, playingSection: null },
+    })
+    engine.sync(tracks)
   },
 }))
 

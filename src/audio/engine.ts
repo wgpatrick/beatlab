@@ -269,6 +269,69 @@ class Engine {
     useStore.setState({ sampleLoaded: null })
   }
 
+  // ---------- Track Lab: full-song deconstruction ----------
+  // The imported song's buffer lives here (non-serializable, like sampleBuffer above); all the
+  // *analysis* of it is pure math in analysis.ts and its results live in the store. Playback is
+  // one Tone.Player looping a [start, start+dur) window — deliberately independent of the
+  // transport, since the imported song has its own tempo/grid.
+
+  private trackLabBuffer: AudioBuffer | null = null
+  private trackLabPlayer: Tone.Player | null = null
+
+  async decodeAudioFile(file: File): Promise<AudioBuffer> {
+    await this.ensureStarted()
+    const arrayBuf = await file.arrayBuffer()
+    return await Tone.getContext().rawContext.decodeAudioData(arrayBuf)
+  }
+
+  setTrackLabBuffer(buffer: AudioBuffer | null) {
+    this.stopTrackLab()
+    this.trackLabBuffer = buffer
+  }
+
+  getTrackLabBuffer(): AudioBuffer | null {
+    return this.trackLabBuffer
+  }
+
+  async playTrackLabRange(startSec: number, durSec: number) {
+    if (!this.trackLabBuffer) return
+    await this.ensureStarted()
+    this.stopTrackLab()
+    const player = new Tone.Player(new Tone.ToneAudioBuffer(this.trackLabBuffer)).connect(this.getMaster())
+    player.loop = true
+    player.loopStart = startSec
+    player.loopEnd = Math.min(this.trackLabBuffer.duration, startSec + durSec)
+    this.trackLabPlayer = player
+    player.start(undefined, startSec)
+  }
+
+  stopTrackLab() {
+    if (this.trackLabPlayer) {
+      this.trackLabPlayer.stop()
+      this.trackLabPlayer.dispose()
+      this.trackLabPlayer = null
+    }
+  }
+
+  /** Copy a [startSec, startSec+durSec) window of the imported song into a fresh AudioBuffer —
+   * used to hand a section's audio to the Phase I drum sampler ("steal the break"). */
+  sliceTrackLabRange(startSec: number, durSec: number): AudioBuffer | null {
+    const src = this.trackLabBuffer
+    if (!src) return null
+    const s0 = Math.max(0, Math.floor(startSec * src.sampleRate))
+    const s1 = Math.min(src.length, Math.floor((startSec + durSec) * src.sampleRate))
+    const len = s1 - s0
+    if (len <= 0) return null
+    const ctx = Tone.getContext().rawContext
+    const out = ctx.createBuffer(src.numberOfChannels, len, src.sampleRate)
+    for (let ch = 0; ch < src.numberOfChannels; ch++) {
+      const data = new Float32Array(len)
+      src.copyFromChannel(data, ch, s0)
+      out.copyToChannel(data, ch)
+    }
+    return out
+  }
+
   // Preview clock, monotonically increasing across calls regardless of lane/instrument. Found via
   // Phase J's capstone lesson testing: previewDrum passes time=undefined ("right now"), and the
   // kick/snare/clap/hat/openhat voices are each a single (non-polyphonic) instance — rapidly

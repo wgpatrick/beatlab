@@ -1,3 +1,4 @@
+import type { TrackLabState } from '../state/trackLabState'
 import {
   DEFAULT_SYNTH,
   DRUM_LANES,
@@ -278,6 +279,9 @@ export interface ValidateCtx {
   /** Phase I: global engine/UI state (not per-track content), passed through so a lesson can
    * check whether the student has loaded a sample — see the sampling lesson in rhythm.ts. */
   sampleLoaded?: { name: string } | null
+  /** Track Lab: the imported-song analysis + the student's structure map, passed through the
+   * same way sampleLoaded is so the Track Deconstruction lessons can grade it. */
+  trackLab?: TrackLabState | null
 }
 
 export interface DrumHit {

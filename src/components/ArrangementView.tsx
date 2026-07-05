@@ -1,7 +1,7 @@
 import { SECTION_TYPES, type SectionType } from '../types'
 import { useStore } from '../state/store'
 
-const SECTION_COLORS: Record<SectionType, string> = {
+export const SECTION_COLORS: Record<SectionType, string> = {
   Intro: '#61afef',
   Buildup: '#e5c07b',
   Drop: '#e06c75',
