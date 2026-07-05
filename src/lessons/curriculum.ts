@@ -3,6 +3,7 @@ import { THEORY_MODULES } from './theory'
 import { SOUND_MODULES } from './sound'
 import { RHYTHM_MODULES } from './rhythm'
 import { ARRANGE_MODULES } from './arrangement'
+import { GENRE_MODULES } from './genres'
 import { DECON_MODULES } from './deconstruction'
 
 export { sandboxTracks, resolveDyn } from './framework'
@@ -13,6 +14,7 @@ export const MODULES: Module[] = [
   ...SOUND_MODULES,
   ...RHYTHM_MODULES,
   ...ARRANGE_MODULES,
+  ...GENRE_MODULES,
   ...DECON_MODULES,
 ]
 

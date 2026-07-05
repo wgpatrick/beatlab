@@ -15,7 +15,7 @@ Open http://localhost:5173. Use headphones or decent speakers — there's a real
 
 ## What's inside
 
-**89 lessons across 10 modules**, each with a task, hints, and a checker that gives
+**99 lessons across 11 modules**, each with a task, hints, and a checker that gives
 specific feedback (e.g. "Note 3 should be E3, but it's D#3"). Lessons marked ↻ are
 **drills**: randomized exercises you can reroll forever.
 
@@ -34,7 +34,10 @@ specific feedback (e.g. "Note 3 should be E3, but it's D#3"). Lessons marked ↻
 9. **Mixing & effects, synthesis depth, sampling, mastering** — EQ / compression / distortion /
    sidechain, automation & modulation, FM / unison / glide / arpeggiator, chop-your-own-sample,
    a recreate-the-track capstone, and a master-bus loudness lesson
-10. **Track Deconstruction** — the producer's classic exercise, guided: X-ray a real song in
+10. **Genre Lab** — signature sounds of ten genres: the house offbeat bass, 303 squelch,
+    dubstep wobble, Reese, supersaw, sidechain pump, lo-fi dust, UKG sub, synthwave arp,
+    future-bass chords
+11. **Track Deconstruction** — the producer's classic exercise, guided: X-ray a real song in
     Track Lab, map its structure, table its elements, then steal the skeleton and chop the break
 
 **Track Lab** — import any song you own (mp3/wav/m4a…) and BeatLab X-rays it *locally in your
