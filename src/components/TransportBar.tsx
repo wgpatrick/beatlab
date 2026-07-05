@@ -31,11 +31,18 @@ export function TransportBar() {
   const bar = currentStep >= 0 ? Math.floor(currentStep / 16) + 1 : 1
   const beat = currentStep >= 0 ? Math.floor((currentStep % 16) / 4) + 1 : 1
 
+  // Track Lab plays the imported song, not the sequencer — its transport, tempo, and MIDI
+  // controls would either do nothing or fight the song, so they hide in that mode. The master
+  // meter stays: Track Lab audio runs through the same master bus.
+  const inTrackLab = mode === 'tracklab'
+
   return (
     <header className="transport">
       <div className="logo">
         BEAT<span>LAB</span>
       </div>
+      {!inTrackLab && (
+      <>
       <div className="transport-group">
         <button
           className={`tbtn play ${isPlaying ? 'active' : ''}`}
@@ -131,6 +138,8 @@ export function TransportBar() {
           </span>
         </div>
       )}
+      </>
+      )}
       <div className="transport-group" title="Master bus level (approximate, instantaneous dBFS via a limiter+meter — not true integrated LUFS)">
         <span className="master-meter-label">MASTER</span>
         <div className="master-meter">
@@ -144,14 +153,16 @@ export function TransportBar() {
         </div>
         <span className="master-meter-value">{masterLevel !== null ? `${masterLevel.toFixed(1)}dB` : '—'}</span>
       </div>
-      <div className="transport-group">
-        <button className="tbtn" title="Undo (Ctrl/Cmd+Z)" disabled={!past.length} onClick={undo}>
-          ↺
-        </button>
-        <button className="tbtn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled={!future.length} onClick={redo}>
-          ↻
-        </button>
-      </div>
+      {!inTrackLab && (
+        <div className="transport-group">
+          <button className="tbtn" title="Undo (Ctrl/Cmd+Z)" disabled={!past.length} onClick={undo}>
+            ↺
+          </button>
+          <button className="tbtn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled={!future.length} onClick={redo}>
+            ↻
+          </button>
+        </div>
+      )}
       <div className="spacer" />
       <div className="mode-toggle">
         <button className={mode === 'lesson' ? 'on' : ''} onClick={() => loadLesson(currentLessonId)}>

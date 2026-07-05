@@ -64,11 +64,20 @@ export default function App() {
       const s = useStore.getState()
       if (e.code === 'Space') {
         e.preventDefault()
+        // Track Lab plays the imported song, not the sequencer — space stops the section loop
+        // there instead of firing up the drum machine underneath it
+        if (s.mode === 'tracklab') {
+          if (s.trackLab.playingSection !== null) s.playTrackLabSection(null)
+          return
+        }
         if (s.isPlaying) s.stop()
         else void s.play()
         return
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        // undo history covers sequencer state, which is invisible in Track Lab — a silent
+        // undo there would mutate what you can't see
+        if (s.mode === 'tracklab') return
         e.preventDefault()
         if (e.shiftKey) s.redo()
         else s.undo()
