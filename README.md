@@ -22,7 +22,7 @@ Open http://localhost:5173/musiclearning/.
 Three modes, one instrument: **Lessons** (the guided curriculum), **Sandbox** (same gear,
 no rules), and **Track Lab** (deconstruct real songs from your own library).
 
-**99 lessons across 11 modules**, each with a task, hints, and a checker that gives
+**108 lessons across 12 modules**, each with a task, hints, and a checker that gives
 specific feedback (e.g. "Note 3 should be E3, but it's D#3"). Lessons marked ↻ are
 **drills**: randomized exercises you can reroll forever.
 
@@ -33,18 +33,22 @@ specific feedback (e.g. "Note 3 should be E3, but it's D#3"). Lessons marked ↻
    call & response, motif & variation, pentatonic melody
 4. **Synthesis** — oscillators, filter, resonance, pluck/pad envelopes, sub bass, organ, strings
 5. **Ear Training** — four match-the-patch challenges, waveform-ID drill, find-the-cutoff drill
-6. **Drum Programming** — four-on-the-floor through full grooves, 16th drive, 3-against-4
-7. **Rhythm Styles** — breakbeat, boom bap, drum & bass, half-time, minimal techno,
+6. **Serum Lab** — the synthesis curriculum translated into Xfer Serum's vocabulary:
+   the four-source layout, wavetables & WT POS, unison supersaw, the ENV 2 → cutoff pluck,
+   BPM-synced LFOs, the growl bass, FX-chain ordering, a reverse-engineer-the-preset ear
+   challenge, and an init-patch-to-finished-lead capstone
+7. **Drum Programming** — four-on-the-floor through full grooves, 16th drive, 3-against-4
+8. **Rhythm Styles** — breakbeat, boom bap, drum & bass, half-time, minimal techno,
    and a rhythm dictation drill (hear a random beat, program it back)
-8. **Arrangement** — song structure, DJ intro, energy curve, breakdown & second drop,
+9. **Arrangement** — song structure, DJ intro, energy curve, breakdown & second drop,
    and a full 16-bar track journey with playback
-9. **Mixing & effects, synthesis depth, sampling, mastering** — EQ / compression / distortion /
-   sidechain, automation & modulation, FM / unison / glide / arpeggiator, chop-your-own-sample,
-   a recreate-the-track capstone, and a master-bus loudness lesson
-10. **Genre Lab** — signature sounds of ten genres: the house offbeat bass, 303 squelch,
+10. **Mixing & effects, synthesis depth, sampling, mastering** — EQ / compression / distortion /
+    sidechain, automation & modulation, FM / unison / glide / arpeggiator, chop-your-own-sample,
+    a recreate-the-track capstone, and a master-bus loudness lesson
+11. **Genre Lab** — signature sounds of ten genres: the house offbeat bass, 303 squelch,
     dubstep wobble, Reese, supersaw, sidechain pump, lo-fi dust, UKG sub, synthwave arp,
     future-bass chords
-11. **Track Deconstruction** — the producer's classic exercise, guided: X-ray a real song in
+12. **Track Deconstruction** — the producer's classic exercise, guided: X-ray a real song in
     Track Lab, map its structure, table its elements, then steal the skeleton and chop the break
 
 **Track Lab** — import any song you own (mp3/wav/m4a…) and BeatLab X-rays it *locally in your
