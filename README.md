@@ -22,7 +22,7 @@ Open http://localhost:5173/musiclearning/.
 Three modes, one instrument: **Lessons** (the guided curriculum), **Sandbox** (same gear,
 no rules), and **Track Lab** (deconstruct real songs from your own library).
 
-**110 lessons across 12 modules**, each with a task, hints, and a checker that gives
+**115 lessons across 12 modules**, each with a task, hints, and a checker that gives
 specific feedback (e.g. "Note 3 should be E3, but it's D#3"). Lessons marked ↻ are
 **drills**: randomized exercises you can reroll forever.
 
@@ -36,8 +36,10 @@ specific feedback (e.g. "Note 3 should be E3, but it's D#3"). Lessons marked ↻
 6. **Serum Lab** — the synthesis curriculum translated into Xfer Serum's vocabulary:
    the four-source layout, a real wavetable oscillator (three tables, WT POS scanning,
    LFO-modulatable), the 5/7-voice stereo-width supersaw, the ENV 2 → cutoff pluck,
-   BPM-synced LFOs, a draw-your-own LFO shape editor, the growl bass, FX-chain ordering,
-   a reverse-engineer-the-preset ear challenge, and an init-patch-to-finished-lead capstone
+   BPM-synced LFOs, a draw-your-own LFO shape editor, plus the classic tutorial
+   archetypes — trance gate, riser, growl bass, hoover, evolving pad, FM bells —
+   FX-chain ordering, a reverse-engineer-the-preset ear challenge, and an
+   init-patch-to-finished-lead capstone
 7. **Drum Programming** — four-on-the-floor through full grooves, 16th drive, 3-against-4
 8. **Rhythm Styles** — breakbeat, boom bap, drum & bass, half-time, minimal techno,
    and a rhythm dictation drill (hear a random beat, program it back)

@@ -307,6 +307,85 @@ const serumLessons: Lesson[] = [
     },
   },
   {
+    id: 'serum-trance-gate',
+    module: SERUM,
+    title: 'The Trance Gate',
+    summary:
+      'The oldest drawn-LFO trick in the book: aim a hard on/off pattern at the VOLUME and a held pad turns into a rhythm. Every trance anthem\'s chopped chord stabs, every synthwave pulse — that\'s a gate. In Serum you draw square steps in the LFO editor and drop it on Master or an FX; the chord does nothing, the drawing does everything.',
+    task: 'This pad holds a chord for the whole bar. Gate it: ✎ DRAW an on/off pattern with at least 5 steps near the TOP (75%+) and 5 near the BOTTOM (below 25%), aim the LFO at AMP, SYNC at 1/1, DEPTH ≥ 80%.',
+    hints: [
+      'Draw squares, not slopes — a gate is a light switch, not a dimmer. Slam steps to the very top and very bottom.',
+      'Classic patterns to try: on-on-off repeated (a 16th gallop), or on-off alternating (straight 8ths). Off-beats against the kick groove hardest.',
+      'Same chord, different drawing = different song. Redraw the pattern a few times with the loop running and hear the rhythm section move.',
+    ],
+    centerPitch: 62,
+    setup: () => ({
+      tracks: [
+        drumTrack({ kick: [0, 4, 8, 12], openhat: [2, 6, 10, 14] }),
+        synthTrack('synth', 'Gate', '#c678dd', { osc: 'sawtooth', osc2Type: 'sawtooth', osc2Level: 0.5, osc2Detune: 12, cutoff: 4000, attack: 0.05, decay: 0.3, sustain: 1, release: 0.15, lfoDest: 'off', lfoDepth: 0, lfoSync: false, lfoSyncRate: '1/1', volume: -11 }, [n(57, 0, 16), n(62, 0, 16), n(66, 0, 16)]),
+      ],
+      loopBars: 1,
+      bpm: 138,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.lfoDest !== 'amp') issues.push(`LFO destination is ${p.lfoDest.toUpperCase()} (aim it at AMP — a gate chops volume)`)
+      if (p.lfoShape !== 'custom') issues.push('still on the sine — hit ✎ DRAW; a sine fades, a gate CHOPS')
+      if (p.lfoShape === 'custom') {
+        const high = p.lfoSteps.filter((v) => v >= 0.75).length
+        const low = p.lfoSteps.filter((v) => v < 0.25).length
+        if (high < 5 || low < 5) issues.push(`drawing has ${high} high / ${low} low steps (need ≥ 5 of each — slam them to the extremes, it\'s a light switch)`)
+      }
+      if (!p.lfoSync || p.lfoSyncRate !== '1/1') issues.push('SYNC on at 1/1 — the pattern is a one-bar rhythm')
+      if (p.lfoDepth < 0.8) issues.push(`depth ${(p.lfoDepth * 100).toFixed(0)}% (need ≥ 80% — a shy gate is just wobbly volume)`)
+      if (issues.length) return fail('Not gating yet — ' + issues.join('; ') + '.')
+      return pass('A held chord became a riff without a single new note — the drawing IS the rhythm. In Serum: same square-step drawing, dropped on Master volume. Redraw it per song section and one pad carries a whole arrangement.')
+    },
+  },
+  {
+    id: 'serum-riser',
+    module: SERUM,
+    title: 'The Riser: Tension You Can Draw',
+    summary:
+      'Before every drop in every EDM track: a whoosh that climbs for a bar and explodes. The recipe is deliberately trivial — WHITE NOISE through a resonant filter whose cutoff CLIMBS, drowned in reverb — which is why it\'s a rite-of-passage Serum tutorial: the sound is 90% modulation, 10% source. Draw the climb.',
+    task: 'Build the riser: NOISE at 60%+, RESONANCE ≥ 2, then ✎ DRAW an ASCENDING ramp (later steps clearly higher than early ones), LFO → CUTOFF, SYNC 1/1, DEPTH ≥ 60%, REVERB send ≥ 20%.',
+    hints: [
+      'The drawing is a staircase UP: start the steps low-left, end high-right. One bar of climb, snapping back at the loop — exactly a 1-bar riser before a drop.',
+      'Resonance is the "whistle" riding the top of the sweep — the riser\'s actual voice. Push it and the climb starts to scream.',
+      'In Serum this is the NOISE oscillator + an LFO (or ENV in one-shot mode) ramping cutoff or pitch. Longer risers just use 2- or 4-bar rates — same drawing.',
+    ],
+    centerPitch: 48,
+    setup: () => ({
+      tracks: [
+        drumTrack({ kick: [0, 4, 8, 12], snare: [4, 12] }),
+        synthTrack('synth', 'Riser', '#56b6c2', { osc: 'sine', cutoff: 800, resonance: 1, attack: 0.05, decay: 0.2, sustain: 1, release: 0.4, noiseLevel: 0, lfoDest: 'off', lfoDepth: 0, lfoSync: false, lfoSyncRate: '1/1', sendReverb: 0, volume: -10 }, [n(48, 0, 16)]),
+      ],
+      loopBars: 1,
+      bpm: 128,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.noiseLevel < 0.6) issues.push(`noise ${(p.noiseLevel * 100).toFixed(0)}% (need ≥ 60% — the riser\'s body is noise, not tone)`)
+      if (p.resonance < 2) issues.push(`resonance ${p.resonance.toFixed(1)} (need ≥ 2 — the whistle on top of the sweep)`)
+      if (p.lfoDest !== 'cutoff') issues.push(`LFO destination is ${p.lfoDest.toUpperCase()} (aim it at CUTOFF — the climb is a filter sweep)`)
+      if (p.lfoShape !== 'custom') issues.push('hit ✎ DRAW — a sine goes up AND down; a riser only climbs')
+      if (p.lfoShape === 'custom') {
+        const firstHalf = p.lfoSteps.slice(0, 8).reduce((a, b) => a + b, 0) / 8
+        const secondHalf = p.lfoSteps.slice(8).reduce((a, b) => a + b, 0) / 8
+        if (secondHalf - firstHalf < 0.3) issues.push('the drawing isn\'t climbing — its second half needs to sit clearly higher than its first (draw a staircase up)')
+      }
+      if (!p.lfoSync || p.lfoSyncRate !== '1/1') issues.push('SYNC on at 1/1 — one full climb per bar')
+      if (p.lfoDepth < 0.6) issues.push(`depth ${(p.lfoDepth * 100).toFixed(0)}% (need ≥ 60% — a riser sweeps octaves, not inches)`)
+      if (p.sendReverb < 0.2) issues.push(`reverb send ${(p.sendReverb * 100).toFixed(0)}% (need ≥ 20% — risers live in the back of the hall)`)
+      if (issues.length) return fail('Not rising yet — ' + issues.join('; ') + '.')
+      return pass('Noise + climbing filter + reverb = tension on demand. You\'ll never buy a "risers" sample pack again — in Serum it\'s the NOISE osc and one ramp, and now you know why every buildup in the last decade sounds like this.')
+    },
+  },
+  {
     id: 'serum-growl',
     module: SERUM,
     title: 'The Serum Growl Bass',
@@ -341,6 +420,116 @@ const serumLessons: Lesson[] = [
       if (p.distortionMix < 0.3) issues.push(`distortion mix ${(p.distortionMix * 100).toFixed(0)}% (need ≥ 30%)`)
       if (issues.length) return fail('Not growling yet — ' + issues.join('; ') + '.')
       return pass('Movement, harmonics, drive — stacked, that\'s a growl. Every "how is that bass made" Serum tutorial is some version of the three layers you just wired by hand.')
+    },
+  },
+  {
+    id: 'serum-hoover',
+    module: SERUM,
+    title: 'The Hoover: A Rave Classic, Rebuilt',
+    summary:
+      'Born as a Roland Alpha Juno preset in the late 80s, the HOOVER (a.k.a. Dominator) powered early rave, hardcore and jungle, and still turns up in modern bass music. The recipe is documented history: pulse-width-modulated square waves, a detuned stack with a sub underneath, thick chorus, and that signature pitch SLIDE into every note. BeatLab has every ingredient: the PWM wavetable, detune, sub, the chorus/phaser send, and GLIDE.',
+    task: 'Resurrect it: OSC A on WT with the PWM table (WT POS 20–80%), OSC 2 at 40%+ with DETUNE 15–60c, SUB ≥ 20%, GLIDE ≥ 50ms so the pattern\'s octave jumps slur, and MOD FX send ≥ 20% for the chorus swirl.',
+    hints: [
+      'The pattern jumps octaves on purpose — with glide up, every jump becomes the hoover\'s signature "yoy" slide. No glide, no hoover.',
+      'Nudge WT POS while it plays: pulse width is the hoover\'s vowel. The original modulated it constantly — an LFO → WT at 1/2 is the bonus move.',
+      'This same recipe in Serum: a PWM wavetable on OSC A, unison + detune, sub osc on, portamento up in the GLOBAL tab, chorus in FX.',
+    ],
+    centerPitch: 40,
+    setup: () => ({
+      tracks: [
+        drumTrack({ kick: [0, 2, 4, 6, 8, 10, 12, 14] }),
+        synthTrack('synth', 'Hoover', '#e5c07b', { osc: 'sawtooth', cutoff: 6000, resonance: 1, attack: 0.01, decay: 0.2, sustain: 0.9, release: 0.25, osc2Type: 'square', osc2Level: 0, osc2Detune: 20, subLevel: 0, glide: 0, sendMod: 0, volume: -10 }, [n(33, 0, 4), n(45, 4, 2), n(33, 6, 2), n(40, 8, 4), n(45, 12, 2), n(33, 14, 2)]),
+      ],
+      loopBars: 1,
+      bpm: 150,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.osc !== 'wavetable' || (p.osc === 'wavetable' && p.wtTable !== 'pwm')) issues.push('OSC A on WT with the PWM table — pulse width IS the hoover timbre')
+      if (p.osc === 'wavetable' && p.wtTable === 'pwm' && (p.wtPos < 0.2 || p.wtPos > 0.8)) issues.push(`WT POS ${(p.wtPos * 100).toFixed(0)}% (20–80% — at the edges the pulse loses its vowel)`)
+      if (p.osc2Level < 0.4) issues.push(`OSC 2 level ${(p.osc2Level * 100).toFixed(0)}% (need ≥ 40% — the stack needs meat)`)
+      if (p.osc2Detune < 15 || p.osc2Detune > 60) issues.push(`detune ${p.osc2Detune.toFixed(0)}c (need 15–60)`)
+      if (p.subLevel < 0.2) issues.push(`sub ${(p.subLevel * 100).toFixed(0)}% (need ≥ 20% — hoovers hit below the waist)`)
+      if (p.glide < 0.05) issues.push(`glide ${(p.glide * 1000).toFixed(0)}ms (need ≥ 50ms — the slide between notes is the signature)`)
+      if (p.sendMod < 0.2) issues.push(`Mod FX send ${(p.sendMod * 100).toFixed(0)}% (need ≥ 20% — the chorus swirl is half the width)`)
+      if (issues.length) return fail('Not hoovering yet — ' + issues.join('; ') + '.')
+      return pass('That\'s thirty years of rave in one patch — PWM stack, sub, chorus, slide. Songs got faster and slower around it; the hoover never changed. In Serum, search the factory tables for "Juno" shapes and it\'s the same five moves.')
+    },
+  },
+  {
+    id: 'serum-evolving-pad',
+    module: SERUM,
+    title: 'The Evolving Pad',
+    summary:
+      'The pad is where Serum\'s whole design philosophy pays off at once: slow envelopes so notes bloom instead of hit, a wide unison stack so it fills the stereo field, and — the part beginners skip — SLOW WAVETABLE MOTION so ten seconds of held chord never sounds like a freeze-frame. A pad without modulation is furniture; a pad with it is weather.',
+    task: 'Make weather: ATTACK ≥ 200ms and RELEASE ≥ 500ms, UNISON ≥ 3 with WIDTH ≥ 40%, OSC A on WT (any table) with the LFO scanning it (dest WT, SYNC at 1/1 or 1/2, DEPTH ≥ 30%), REVERB send ≥ 25%.',
+    hints: [
+      'Slow attack changes what the instrument IS: the same chord that stabbed now swells. Pads are envelopes first, timbre second.',
+      'The VOCAL table at slow scan is a choir breathing; ANALOG is a string section leaning in. Audition both before choosing.',
+      'In Serum pad presets, look at the mod matrix: there is ALWAYS a slow LFO or envelope on WT POS. Now you know what it\'s doing there.',
+    ],
+    centerPitch: 57,
+    setup: () => ({
+      tracks: [
+        synthTrack('synth', 'Pad', '#98c379', { osc: 'sawtooth', osc2Type: 'sawtooth', osc2Level: 0.5, osc2Detune: 18, cutoff: 5000, attack: 0.01, decay: 0.3, sustain: 0.9, release: 0.2, unisonVoices: 1, unisonWidth: 0, lfoDest: 'off', lfoDepth: 0, lfoSync: false, sendReverb: 0.1, volume: -12 }, [n(50, 0, 16), n(57, 0, 16), n(60, 0, 16), n(64, 0, 16)]),
+      ],
+      loopBars: 1,
+      bpm: 100,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.attack < 0.2) issues.push(`attack ${(p.attack * 1000).toFixed(0)}ms (need ≥ 200ms — pads bloom, they don\'t hit)`)
+      if (p.release < 0.5) issues.push(`release ${(p.release * 1000).toFixed(0)}ms (need ≥ 500ms — let go gently)`)
+      if (p.unisonVoices < 3) issues.push(`unison ${p.unisonVoices} voice(s) (need ≥ 3)`)
+      if (p.unisonWidth < 0.4) issues.push(`width ${(p.unisonWidth * 100).toFixed(0)}% (need ≥ 40% — a pad is scenery, and scenery is wide)`)
+      if (p.osc !== 'wavetable') issues.push('OSC A on WT — the evolving part needs a table to evolve through')
+      if (p.lfoDest !== 'wtPos') issues.push(`LFO destination is ${p.lfoDest.toUpperCase()} (aim it at WT — the slow timbre drift is what keeps a held chord alive)`)
+      if (!p.lfoSync || (p.lfoSyncRate !== '1/1' && p.lfoSyncRate !== '1/2')) issues.push('LFO SYNC on at 1/1 or 1/2 — pad motion is glacial')
+      if (p.lfoDepth < 0.3) issues.push(`LFO depth ${(p.lfoDepth * 100).toFixed(0)}% (need ≥ 30%)`)
+      if (p.sendReverb < 0.25) issues.push(`reverb send ${(p.sendReverb * 100).toFixed(0)}% (need ≥ 25%)`)
+      if (issues.length) return fail('Still furniture — ' + issues.join('; ') + '.')
+      return pass('Bloom, width, and a timbre that never sits still — that\'s a pad that can hold a mix on its own. Every lush Serum pad preset is exactly this checklist plus taste.')
+    },
+  },
+  {
+    id: 'serum-fm-bell',
+    module: SERUM,
+    title: 'FM Bells: The Inharmonic Trick',
+    summary:
+      'Ask FM for a WHOLE-NUMBER frequency ratio and you get pitched, polite harmonics. Ask for a ratio BETWEEN the whole numbers and the partials land off the harmonic grid — which is, precisely, what a struck bell does. One weird ratio + a fast-attack/long-decay envelope = every DX7 electric piano, every trap bell, every icy plink in ambient music. In Serum this hides in the Warp menu (FM from B) or the noise osc; BeatLab\'s FM voice does it directly.',
+    task: 'Cast a bell: FM LEVEL ≥ 50%, HARM parked BETWEEN whole numbers (at least 0.25 away from any integer, and ≥ 2), MOD IDX between 4 and 14, then the strike envelope — ATTACK ≤ 10ms, DECAY ≥ 400ms, SUSTAIN ≤ 0.25, RELEASE ≥ 500ms.',
+    hints: [
+      'Sweep HARM slowly from 2.0 to 4.0 while notes play: hear it click into "pitched" at 2.0, 3.0, 4.0 and turn bell-metal everywhere in between. Park in the in-between.',
+      'The envelope is half the illusion: bells are all strike and ring — nothing held. Sustain near zero, long decay.',
+      'Real bell ratios cluster near 3.5 and 5.4. The DX7\'s famous E.PIANO 1 used exactly this trick, quieter.',
+    ],
+    centerPitch: 72,
+    setup: () => ({
+      tracks: [
+        drumTrack({ kick: [0, 8], hat: [4, 12] }),
+        synthTrack('synth', 'Bell', '#61afef', { osc: 'sine', cutoff: 9000, attack: 0.005, decay: 0.3, sustain: 0.7, release: 0.3, fmLevel: 0, fmHarmonicity: 1, fmModIndex: 5, volume: -11 }, [n(72, 0, 3), n(76, 4, 3), n(79, 8, 3), n(74, 12, 3)]),
+      ],
+      loopBars: 1,
+      bpm: 90,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.fmLevel < 0.5) issues.push(`FM level ${(p.fmLevel * 100).toFixed(0)}% (need ≥ 50% — the bell IS the FM voice)`)
+      const fromInt = Math.abs(p.fmHarmonicity - Math.round(p.fmHarmonicity))
+      if (p.fmHarmonicity < 2 || fromInt < 0.25) issues.push(`HARM ${p.fmHarmonicity.toFixed(2)} (park ≥ 2 and at least 0.25 from any whole number — whole ratios are pitched, bells live between)`)
+      if (p.fmModIndex < 4 || p.fmModIndex > 14) issues.push(`MOD IDX ${p.fmModIndex.toFixed(0)} (need 4–14 — under 4 it\'s a whisper, over 14 it\'s a trash can)`)
+      if (p.attack > 0.01) issues.push(`attack ${(p.attack * 1000).toFixed(0)}ms (need ≤ 10ms — a bell is STRUCK)`)
+      if (p.decay < 0.4) issues.push(`decay ${(p.decay * 1000).toFixed(0)}ms (need ≥ 400ms — the ring)`)
+      if (p.sustain > 0.25) issues.push(`sustain ${p.sustain.toFixed(2)} (need ≤ 0.25 — nothing held, all ring)`)
+      if (p.release < 0.5) issues.push(`release ${(p.release * 1000).toFixed(0)}ms (need ≥ 500ms — let it ring past the note)`)
+      if (issues.length) return fail('Not ringing yet — ' + issues.join('; ') + '.')
+      return pass('Inharmonic ratio + strike envelope = metal. That single idea is the DX7\'s whole legend and Serum\'s FM warp in one lesson — and now when a preset sounds "glassy," you know exactly which two knobs made it so.')
     },
   },
   {
