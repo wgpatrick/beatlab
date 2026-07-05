@@ -332,6 +332,132 @@ const genreLessons: Lesson[] = [
       return soundStage(issues, 'Warm, dusty and degraded — highs rolled off, bitcrush grit on top. That deliberate lo-fi imperfection over a lazy boom-bap beat is the whole genre. Load a real sample in the SAMPLE section and the exact same treatment turns any loop into a lo-fi beat.')
     },
   },
+
+  // ---------------- UK GARAGE ----------------
+  {
+    id: 'genre-uk-garage',
+    module: GENRES,
+    title: 'UK Garage — Sub-Bass Weight',
+    summary:
+      'UK GARAGE (UKG) is the skippy, swung cousin of house — a syncopated "2-step" shuffle where the kick and snare dance around each other instead of marching. Under that bounce sits the genre\'s low-end secret: a SUB-OSCILLATOR. It\'s a pure sine wave running an octave below your main oscillator, adding pure weight and body you feel in your chest more than hear. Garage, dubstep and grime all live or die on this sub.',
+    task: 'Stage 1 — a skippy 2-step at 130 BPM: KICK on step 1 plus one syncopated kick (steps 7–11, off the snare), SNARE on 5 and 13, at least 4 closed hats. Stage 2 — on the BASS track (a bouncy line is loaded), add weight: bring the SUB up to 50% or more, and keep the CUTOFF dark at 1500 Hz or below so it stays a proper sub, not a lead.',
+    hints: [
+      'The sub is a fixed sine one octave down — it adds no new harmonics, just pure low-end body.',
+      'Sub-bass is felt, not heard: on laptop speakers you may barely hear it, but it\'s the foundation on a real system.',
+      'Keep the cutoff low — a bright bass fights the sub. Garage bass sits deep and dark.',
+    ],
+    centerPitch: 33,
+    visibleParams: [...BASICS, 'subLevel', 'resonance', 'decay', 'sustain'],
+    setup: () => ({
+      tracks: [
+        drumTrack(),
+        synthTrack('bass', 'Bass', '#56b6c2', { osc: 'sawtooth', cutoff: 3500, resonance: 1, attack: 0.005, decay: 0.3, sustain: 0.5, release: 0.2, subLevel: 0 }, [
+          n(33, 0, 3), n(45, 3, 1), n(33, 6, 2), n(36, 10, 2), n(33, 12, 3), n(31, 15, 1),
+        ]),
+      ],
+      loopBars: 1,
+      bpm: 130,
+      selectedTrackId: 'drums',
+    }),
+    validate: (ctx) => {
+      const d = track(ctx, 'drums')
+      const kick = laneSteps(d, 'kick')
+      if (!kick.includes(0)) return beatFail('kick must anchor step 1.')
+      if (kick.includes(4) || kick.includes(12)) return beatFail('keep kicks off the snare steps (5 and 13) — 2-step is kick and snare taking turns.')
+      if (!kick.some((s) => [6, 7, 8, 9, 10, 11].includes(s))) return beatFail('add a syncopated second kick (try step 8, 10 or 11) — the skip is the whole point of 2-step.')
+      if (!sameSet(laneSteps(d, 'snare'), [4, 12])) return beatFail('snare on steps 5 and 13 — the backbeat holds the shuffle together.')
+      if (laneSteps(d, 'hat').length < 4) return beatFail('add at least 4 closed hats to carry the skip.')
+      const p = track(ctx, 'bass').synth
+      const issues: string[] = []
+      if (p.subLevel < 0.5) issues.push(`sub level is ${(p.subLevel * 100).toFixed(0)}% (raise it to ≥ 50% for the weight)`)
+      if (p.cutoff > 1500) issues.push(`cutoff is ${Math.round(p.cutoff)}Hz (roll it down to ≤ 1500Hz so the bass stays deep and dark)`)
+      return soundStage(issues, 'That deep, chest-hitting weight under a skippy 2-step is UK garage. The sub-oscillator does the heavy lifting — one sine wave an octave down turns a thin bass into a foundation.')
+    },
+  },
+
+  // ---------------- SYNTHWAVE ----------------
+  {
+    id: 'genre-synthwave',
+    module: GENRES,
+    title: 'Synthwave — The Arpeggiator',
+    summary:
+      'SYNTHWAVE (a.k.a. retrowave / outrun) is a loving throwback to 1980s film and game soundtracks: gated snares, analog pads, and above all the ARPEGGIATOR — a device that takes a held chord and machine-guns its notes out one at a time, in order, locked to the tempo. That relentless, hypnotic run of notes is the sound of every neon-soaked night drive. You hold three notes; the arp plays a thousand.',
+    task: 'Stage 1 — a driving 80s beat at 115 BPM: KICK on steps 1 and 9 (beats 1 and 3), SNARE on 5 and 13 (the backbeat), at least 6 closed hats. Stage 2 — on the ARP track (a held chord is loaded), turn the ARPEGGIATOR ON, set its RATE to 2 or higher so it runs, and keep a bright sawtooth so it cuts through.',
+    hints: [
+      'The arp only has something to play because a CHORD is held — it fans those stacked notes out into a sequence.',
+      'Rate = how many arp notes per 16th step. Higher = a faster, more frantic run. Try the UP / DOWN / UP-DOWN patterns too.',
+      'A bright sawtooth is the classic synthwave arp tone — let the highs through.',
+    ],
+    centerPitch: 48,
+    visibleParams: [...BASICS, 'arpOn', 'arpRate', 'arpPattern', 'attack', 'release'],
+    setup: () => ({
+      tracks: [
+        drumTrack(),
+        synthTrack('arp', 'Arp', '#c678dd', { osc: 'sawtooth', cutoff: 4000, attack: 0.01, decay: 0.3, sustain: 0.6, release: 0.3, arpOn: false, arpRate: 1, arpPattern: 'up' }, [
+          n(45, 0, 16), n(48, 0, 16), n(52, 0, 16),
+        ]),
+      ],
+      loopBars: 1,
+      bpm: 115,
+      selectedTrackId: 'drums',
+    }),
+    validate: (ctx) => {
+      const d = track(ctx, 'drums')
+      if (!sameSet(laneSteps(d, 'kick'), [0, 8])) return beatFail('kick on steps 1 and 9 — beats 1 and 3, the driving 80s pulse.')
+      if (!sameSet(laneSteps(d, 'snare'), [4, 12])) return beatFail('snare on steps 5 and 13 — the backbeat.')
+      if (laneSteps(d, 'hat').length < 6) return beatFail('at least 6 closed hats to keep it driving.')
+      const p = track(ctx, 'arp').synth
+      const issues: string[] = []
+      if (!p.arpOn) issues.push('the arpeggiator is OFF (turn it ON to fan the held chord into a run)')
+      if (p.arpRate < 2) issues.push(`arp rate is ${p.arpRate} (raise it to ≥ 2 so it actually runs)`)
+      if (p.osc !== 'sawtooth') issues.push(`osc is ${p.osc.toUpperCase()} (a bright SAWTOOTH is the synthwave arp tone)`)
+      if (p.cutoff < 2500) issues.push(`cutoff is ${Math.round(p.cutoff)}Hz (open it to ≥ 2500Hz so the arp cuts through)`)
+      return soundStage(issues, 'That relentless, hypnotic run of notes is the arpeggiator — you held three notes and it plays a river of them, locked to the tempo. Pure neon-highway synthwave.')
+    },
+  },
+
+  // ---------------- FUTURE BASS ----------------
+  {
+    id: 'genre-future-bass',
+    module: GENRES,
+    title: 'Future Bass — Supersaw Chords That Breathe',
+    summary:
+      'FUTURE BASS is where two techniques you already know collide: Trance\'s SUPERSAW and Techno\'s SIDECHAIN PUMP — but applied to lush, detuned CHORDS instead of a lead or a stab. The chord swells in the gaps and ducks on every kick/clap, so the whole thing "breathes" in that emotional, rhythmic way the genre is built on. This is the payoff lesson: signature elements from earlier genres, recombined into something new.',
+    task: 'Stage 1 — a big half-time drop beat at 150 BPM: KICK on step 1 (plus optionally more), a CLAP on step 9 (the huge backbeat), some hats. Stage 2 — on the CHORDS track (a held chord is loaded), build the future-bass sound: sawtooth osc, UNISON VOICES = 3 with OSC 2 LEVEL 30%+ and DETUNE 12–40 cents (the supersaw width), then SIDECHAIN it — set SOURCE to Drums and DUCK AMOUNT to 40%+ so the chord pumps.',
+    hints: [
+      'This is Trance\'s supersaw (unison + detune) plus Techno\'s pump (sidechain duck), together on a chord.',
+      'The sidechain is what makes it "breathe" — the chord ducks under every kick and swells back between hits.',
+      'Detune spreads the stacked voices; the pump gives it rhythm. Both at once = the future-bass drop.',
+    ],
+    centerPitch: 60,
+    visibleParams: [...BASICS, 'osc2Type', 'osc2Level', 'osc2Detune', 'unisonVoices', 'duckSource', 'duckAmount', 'sustain'],
+    setup: () => ({
+      tracks: [
+        drumTrack(),
+        synthTrack('chords', 'Chords', '#98c379', { osc: 'sawtooth', cutoff: 6000, attack: 0.02, decay: 0.3, sustain: 0.9, release: 0.3, osc2Type: 'sawtooth', osc2Level: 0, osc2Detune: 0, unisonVoices: 1, duckSource: null, duckAmount: 0 }, [
+          n(60, 0, 16), n(64, 0, 16), n(67, 0, 16),
+        ]),
+      ],
+      loopBars: 1,
+      bpm: 150,
+      selectedTrackId: 'drums',
+    }),
+    validate: (ctx) => {
+      const d = track(ctx, 'drums')
+      if (!laneSteps(d, 'kick').includes(0)) return beatFail('kick must anchor step 1.')
+      if (!laneSteps(d, 'clap').includes(8)) return beatFail('put a CLAP on step 9 — the huge half-time backbeat on beat 3.')
+      if (laneSteps(d, 'hat').length + laneSteps(d, 'openhat').length < 2) return beatFail('add at least a couple of hats for movement.')
+      const p = track(ctx, 'chords').synth
+      const issues: string[] = []
+      if (p.osc !== 'sawtooth') issues.push(`osc is ${p.osc.toUpperCase()} (a supersaw is stacked SAWTOOTHS)`)
+      if (p.unisonVoices !== 3) issues.push(`unison voices is ${p.unisonVoices} (set it to 3 for the full supersaw stack)`)
+      if (p.osc2Level < 0.3) issues.push(`osc 2 level is ${(p.osc2Level * 100).toFixed(0)}% (raise it to ≥ 30% so the stacked voices sound)`)
+      if (p.osc2Detune < 12 || p.osc2Detune > 40) issues.push(`detune is ${p.osc2Detune.toFixed(0)} cents (spread the voices 12–40 cents for width)`)
+      if (p.duckSource !== 'drums') issues.push('sidechain source isn\'t set to Drums (that\'s the kick/clap that triggers the pump)')
+      if (p.duckAmount < 0.4) issues.push(`duck amount is ${(p.duckAmount * 100).toFixed(0)}% (raise it to ≥ 40% so the chord breathes)`)
+      return soundStage(issues, 'A lush, detuned supersaw chord that breathes on every hit — Trance\'s width plus Techno\'s pump, recombined. That\'s future bass, and that\'s how every genre is built: signature elements, borrowed and combined.')
+    },
+  },
 ]
 
 export const GENRE_MODULES: Module[] = [{ name: GENRES, lessons: genreLessons }]
