@@ -1,6 +1,7 @@
 import type { Module } from './framework'
 import { THEORY_MODULES } from './theory'
 import { SOUND_MODULES } from './sound'
+import { SERUM_MODULES } from './serum'
 import { RHYTHM_MODULES } from './rhythm'
 import { ARRANGE_MODULES } from './arrangement'
 import { GENRE_MODULES } from './genres'
@@ -12,6 +13,7 @@ export type { Lesson, LessonSetup, ValidateCtx, LessonParams } from './framework
 export const MODULES: Module[] = [
   ...THEORY_MODULES,
   ...SOUND_MODULES,
+  ...SERUM_MODULES,
   ...RHYTHM_MODULES,
   ...ARRANGE_MODULES,
   ...GENRE_MODULES,
