@@ -517,10 +517,14 @@ class Engine {
   // `pos` (normally p.wtPos; the tick loop passes an LFO/automation-scanned position instead).
   // Cached on lastOscKey so applyParams' constant knob-drag calls don't rebuild the PeriodicWave.
   private applyMainOsc(chain: SynthChain, p: SynthParams, pos: number) {
-    const key = p.osc === 'wavetable' ? `wt:${p.wtTable}:${pos.toFixed(3)}` : p.osc
+    // the DRAW table's cache key must also track the drawings themselves — a cheap position-
+    // weighted sum is plenty to distinguish two sketches without stringifying 128 floats
+    const frameHash = (arr: number[]) => arr.reduce((h, v, i) => h + v * (i + 1), 0).toFixed(3)
+    const custom = p.wtTable === 'custom' ? `:${frameHash(p.wtCustomA)}:${frameHash(p.wtCustomB)}` : ''
+    const key = p.osc === 'wavetable' ? `wt:${p.wtTable}:${pos.toFixed(3)}${custom}` : p.osc
     if (chain.lastOscKey === key) return
     if (p.osc === 'wavetable') {
-      chain.synth.set({ oscillator: { type: 'custom', partials: wtPartials(p.wtTable, pos) } })
+      chain.synth.set({ oscillator: { type: 'custom', partials: wtPartials(p.wtTable, pos, { a: p.wtCustomA, b: p.wtCustomB }) } })
     } else {
       chain.synth.set({ oscillator: { type: p.osc } })
     }
@@ -945,7 +949,7 @@ class Engine {
     const env = { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release }
     // wavetable targets preview at their static wtPos (no per-note scanning — same phrase-note
     // resolution tradeoff as the LFO sampling below)
-    if (p.osc === 'wavetable') synth.set({ oscillator: { type: 'custom', partials: wtPartials(p.wtTable, p.wtPos) }, envelope: env })
+    if (p.osc === 'wavetable') synth.set({ oscillator: { type: 'custom', partials: wtPartials(p.wtTable, p.wtPos, { a: p.wtCustomA, b: p.wtCustomB }) }, envelope: env })
     else synth.set({ oscillator: { type: p.osc }, envelope: env })
     osc2.set({ oscillator: { type: p.osc2Type }, envelope: env })
     sub.set({ oscillator: { type: 'sine' }, envelope: env })

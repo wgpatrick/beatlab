@@ -163,6 +163,42 @@ const serumLessons: Lesson[] = [
     },
   },
   {
+    id: 'serum-draw-wavetable',
+    module: SERUM,
+    title: 'Draw Your Own Wavetable',
+    summary:
+      'Serum\'s deepest rabbit hole: double-click an oscillator and you\'re in the wavetable EDITOR, drawing the actual wave. BeatLab\'s DRAW table is that idea at learning scale — sketch frame A, sketch frame B, and WT POS morphs between them. Watch the yellow waveform view while you scan: that\'s not an illustration, it\'s the exact cycle the oscillator is producing. Jagged drawings = buzzy spectra; smooth drawings = mellow. Your hand is now designing the harmonics.',
+    task: 'OSC A on WT, table on DRAW, then make the two frames genuinely DIFFERENT instruments: draw frame A smooth and frame B jagged (or vice versa), each using most of the vertical range, and park WT POS between 25% and 75% so you\'re playing a wave that exists in neither drawing.',
+    hints: [
+      'Hold a note while you draw — every stroke changes the sound live. Sharp corners and zigzags create high harmonics; gentle curves stay pure.',
+      'Draw something absurd on purpose (a staircase, your initials) and listen. This is how sound designers actually explore — the ear finds things the theory wouldn\'t suggest.',
+      'The next-level move you already know: LFO → WT to sweep between your two drawings in rhythm. Your own drawings, talking.',
+    ],
+    centerPitch: 48,
+    setup: () => ({
+      tracks: [synthTrack('synth', 'Draw', '#56b6c2', { osc: 'wavetable', wtTable: 'analog', wtPos: 0.5, cutoff: 9000, attack: 0.01, decay: 0.2, sustain: 0.85, release: 0.4, volume: -10 }, [n(45, 0, 16), n(52, 0, 16)])],
+      loopBars: 1,
+      bpm: 100,
+      selectedTrackId: 'synth',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'synth').synth
+      const issues: string[] = []
+      if (p.osc !== 'wavetable') issues.push('OSC A must be WT')
+      if (p.osc === 'wavetable' && p.wtTable !== 'custom') issues.push('table must be DRAW — the other tables are pre-drawn for you')
+      if (p.osc === 'wavetable' && p.wtTable === 'custom') {
+        const span = (arr: number[]) => Math.max(...arr) - Math.min(...arr)
+        if (span(p.wtCustomA) < 0.8) issues.push('frame A barely moves — use most of the vertical range (quiet drawings make quiet waves)')
+        if (span(p.wtCustomB) < 0.8) issues.push('frame B barely moves — use most of the vertical range')
+        const diff = p.wtCustomA.reduce((s, v, i) => s + Math.abs(v - (p.wtCustomB[i] ?? 0)), 0) / p.wtCustomA.length
+        if (diff < 0.25) issues.push('A and B are nearly the same drawing — the morph needs two different instruments to travel between')
+        if (p.wtPos < 0.25 || p.wtPos > 0.75) issues.push(`WT POS at ${(p.wtPos * 100).toFixed(0)}% (park 25–75% — the interesting wave is the one you DIDN\'T draw)`)
+      }
+      if (issues.length) return fail('Keep sketching — ' + issues.join('; ') + '.')
+      return pass('You just designed a timbre no preset pack contains — and heard the in-between wave neither of your hands drew. In Serum\'s editor you\'d add more frames and draw harmonics directly on the spectrum; the instinct you just built is the whole skill.')
+    },
+  },
+  {
     id: 'serum-supersaw',
     module: SERUM,
     title: 'Unison: The Serum Supersaw',

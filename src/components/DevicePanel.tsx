@@ -4,7 +4,7 @@ import { engine } from '../audio/engine'
 import { useStore } from '../state/store'
 import { Knob } from './Knob'
 import { Scope } from './Scope'
-import { WT_TABLE_INFO } from '../audio/wavetables'
+import { WT_DRAW_POINTS, WT_TABLE_INFO, waveformFromPartials, wtPartials } from '../audio/wavetables'
 import type { ParamStatus } from '../lessons/framework'
 
 const WAVES: { type: OscType; label: string; path: string; hint: string }[] = [
@@ -52,6 +52,102 @@ const ratio = (v: number) => `${v.toFixed(1)}:1`
 const bits = (v: number) => `${Math.round(v)}bit`
 
 const INSERT_LABELS: Record<InsertKind, string> = { eq: 'EQ', comp: 'COMP', dist: 'DIST' }
+
+/** Wave 3b: the wavetable's morphing waveform view — renders the actual single cycle the
+ * oscillator is producing at the current WT POS (additive resynthesis of the same partials the
+ * engine plays), so dragging WT POS visibly morphs the wave, Serum-style. */
+function WtWaveView({ p }: { p: SynthParams }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const W = (canvas.width = canvas.clientWidth * 2)
+    const H = (canvas.height = canvas.clientHeight * 2)
+    const ctx = canvas.getContext('2d')!
+    ctx.clearRect(0, 0, W, H)
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'
+    ctx.fillRect(0, H / 2 - 1, W, 2)
+    const wave = waveformFromPartials(wtPartials(p.wtTable, p.wtPos, { a: p.wtCustomA, b: p.wtCustomB }), 128)
+    ctx.strokeStyle = '#ffb02e'
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    for (let i = 0; i < wave.length; i++) {
+      const x = (i / (wave.length - 1)) * W
+      const y = H / 2 - wave[i] * H * 0.42
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+  }, [p.wtTable, p.wtPos, p.wtCustomA, p.wtCustomB])
+  return <canvas ref={ref} className="wt-wave-view" title="The single cycle the oscillator is producing right now — drag WT POS and watch it morph" />
+}
+
+/** Wave 3b: draw one single-cycle frame of the DRAW wavetable — a bipolar freehand line. */
+function WaveDrawEditor({ label, samples, onChange }: { label: string; samples: number[]; onChange: (s: number[]) => void }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const dragging = useRef(false)
+  const lastIdx = useRef<number | null>(null)
+
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const W = (canvas.width = canvas.clientWidth * 2)
+    const H = (canvas.height = canvas.clientHeight * 2)
+    const ctx = canvas.getContext('2d')!
+    ctx.clearRect(0, 0, W, H)
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'
+    ctx.fillRect(0, H / 2 - 1, W, 2)
+    ctx.strokeStyle = '#56b6c2'
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    for (let i = 0; i < samples.length; i++) {
+      const x = (i / (samples.length - 1)) * W
+      const y = H / 2 - (samples[i] ?? 0) * H * 0.45
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'
+    ctx.font = `${Math.round(H * 0.28)}px sans-serif`
+    ctx.fillText(label, 8, H * 0.3)
+  }, [samples, label])
+
+  const paint = (e: React.PointerEvent) => {
+    const canvas = ref.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const i = Math.max(0, Math.min(WT_DRAW_POINTS - 1, Math.floor(((e.clientX - rect.left) / rect.width) * WT_DRAW_POINTS)))
+    const v = Math.max(-1, Math.min(1, 1 - (2 * (e.clientY - rect.top)) / rect.height))
+    const next = samples.length === WT_DRAW_POINTS ? [...samples] : Array(WT_DRAW_POINTS).fill(0)
+    // fill the gap between fast pointer events so strokes stay continuous
+    const from = lastIdx.current ?? i
+    const step = i > from ? 1 : -1
+    for (let k = from; k !== i + step; k += step) {
+      const t = from === i ? 1 : (k - from) / (i - from)
+      next[k] = Math.round((next[from] * (1 - t) + v * t) * 100) / 100
+    }
+    next[i] = Math.round(v * 100) / 100
+    lastIdx.current = i
+    onChange(next)
+  }
+
+  return (
+    <canvas
+      ref={ref}
+      className="wt-draw-editor"
+      title={`Draw frame ${label} — one single cycle of the wave, freehand. WT POS morphs between A and B.`}
+      onPointerDown={(e) => {
+        dragging.current = true
+        lastIdx.current = null
+        e.currentTarget.setPointerCapture(e.pointerId)
+        paint(e)
+      }}
+      onPointerMove={(e) => dragging.current && paint(e)}
+      onPointerUp={() => {
+        dragging.current = false
+        lastIdx.current = null
+      }}
+    />
+  )
+}
 
 /** Wave 3: draw-your-own LFO shape — 16 bars, drag across to sketch a wobble/pump pattern.
  * One full pass through the drawing = one LFO cycle (so a synced 1/1 rate = the drawing per bar). */
@@ -244,31 +340,40 @@ export function DevicePanel({ track }: { track: Track }) {
             </button>
           </div>
           {p.osc === 'wavetable' && (
-            <div className="knob-row" style={{ alignItems: 'center', marginTop: 8 }}>
-              <div className="unison-btns">
-                <div className="unison-btns-label">Table</div>
-                {WT_TABLE_INFO.map((t) => (
-                  <button
-                    key={t.value}
-                    className={`wave ${p.wtTable === t.value ? 'on' : ''}`}
-                    onClick={() => set({ wtTable: t.value as WtTable })}
-                    title={t.blurb}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+            <>
+              <div className="knob-row" style={{ alignItems: 'center', marginTop: 8 }}>
+                <div className="unison-btns">
+                  <div className="unison-btns-label">Table</div>
+                  {WT_TABLE_INFO.map((t) => (
+                    <button
+                      key={t.value}
+                      className={`wave ${p.wtTable === t.value ? 'on' : ''}`}
+                      onClick={() => set({ wtTable: t.value as WtTable })}
+                      title={t.blurb}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <Knob
+                  label="WT Pos"
+                  value={p.wtPos}
+                  min={0}
+                  max={1}
+                  format={pct}
+                  status={statusOf('wtPos')}
+                  onChange={(v) => set({ wtPos: v })}
+                  hint="Position through the wavetable — turn it while a note plays and the timbre morphs. Modulate it with the LFO (dest: WT) or an automation lane for movement"
+                />
+                <WtWaveView p={p} />
+                {p.wtTable === 'custom' && (
+                  <>
+                    <WaveDrawEditor label="A" samples={p.wtCustomA} onChange={(s) => set({ wtCustomA: s })} />
+                    <WaveDrawEditor label="B" samples={p.wtCustomB} onChange={(s) => set({ wtCustomB: s })} />
+                  </>
+                )}
               </div>
-              <Knob
-                label="WT Pos"
-                value={p.wtPos}
-                min={0}
-                max={1}
-                format={pct}
-                status={statusOf('wtPos')}
-                onChange={(v) => set({ wtPos: v })}
-                hint="Position through the wavetable — turn it while a note plays and the timbre morphs. Modulate it with the LFO (dest: WT) or an automation lane for movement"
-              />
-            </div>
+            </>
           )}
         </Section>
       )}

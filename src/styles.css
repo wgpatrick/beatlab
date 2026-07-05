@@ -1605,3 +1605,22 @@ button.seq-label:hover {
   cursor: crosshair;
   touch-action: none;
 }
+
+/* ---------- Wave 3b: wavetable waveform view + draw-your-own frames ---------- */
+.wt-wave-view {
+  width: 110px;
+  height: 52px;
+  background: #16181c;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+.wt-draw-editor {
+  flex: 1;
+  min-width: 120px;
+  height: 48px;
+  background: #16181c;
+  border: 1px solid #2b4a52;
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: none;
+}

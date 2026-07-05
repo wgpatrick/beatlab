@@ -2,7 +2,9 @@ export type OscType = 'sine' | 'triangle' | 'sawtooth' | 'square'
 // Wave 3: the main oscillator can also be a wavetable — a bank of spectra scanned by wtPos
 // (Serum's WT POS). Only the main osc: osc2/osc3 stay classic shapes, like Serum's simpler SUB.
 export type MainOsc = OscType | 'wavetable'
-export type WtTable = 'analog' | 'pwm' | 'vocal'
+// 'custom' is the DRAW table: the user sketches two single-cycle frames (wtCustomA/B) and wtPos
+// morphs between their spectra — Serum's draw-your-own-wavetable workflow at two-frame scale.
+export type WtTable = 'analog' | 'pwm' | 'vocal' | 'custom'
 export type FilterType = 'lowpass' | 'bandpass' | 'highpass'
 // 'wtPos' scans the wavetable position around its static value — only audible when osc is
 // 'wavetable' (silently inert otherwise, same convention as amp LFO on a muted track).
@@ -29,6 +31,9 @@ export interface SynthParams {
   // position through it (0 = first frame, 1 = last). wtPos is automatable and LFO-modulatable.
   wtTable: WtTable
   wtPos: number // 0..1
+  // the two hand-drawn frames of the 'custom' table: single cycles, 64 samples each, -1..1
+  wtCustomA: number[]
+  wtCustomB: number[]
   cutoff: number // Hz
   resonance: number // filter Q
   filterType: FilterType
@@ -249,10 +254,21 @@ export const DEFAULT_LFO_STEPS: number[] = Array.from({ length: 16 }, (_, i) =>
   Math.round((0.5 + 0.5 * Math.sin((2 * Math.PI * i) / 16)) * 100) / 100,
 )
 
+// Default drawn wavetable frames: A = a sine cycle, B = a soft ramp — so the DRAW table makes a
+// pleasant sine→saw-ish morph before the user has drawn anything.
+export const DEFAULT_WT_FRAME_A: number[] = Array.from({ length: 64 }, (_, k) =>
+  Math.round(Math.sin((2 * Math.PI * k) / 64) * 100) / 100,
+)
+export const DEFAULT_WT_FRAME_B: number[] = Array.from({ length: 64 }, (_, k) =>
+  Math.round((((k + 32) % 64) / 32 - 1) * 100) / 100,
+)
+
 export const DEFAULT_SYNTH: SynthParams = {
   osc: 'sawtooth',
   wtTable: 'analog',
   wtPos: 0.5,
+  wtCustomA: DEFAULT_WT_FRAME_A,
+  wtCustomB: DEFAULT_WT_FRAME_B,
   cutoff: 9000,
   resonance: 0.8,
   filterType: 'lowpass',
