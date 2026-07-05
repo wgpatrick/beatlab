@@ -1,19 +1,26 @@
 # BeatLab — Electronic Music Production Trainer
 
-A browser-based, Ableton-styled DAW for learning music theory, synthesis and arrangement
-through hands-on challenges. Built with React + TypeScript + [Tone.js](https://tonejs.github.io/)
-(Web Audio synthesis — no samples, every sound is synthesized live).
+A browser-based, Ableton-styled DAW for learning music theory, synthesis, mixing and
+arrangement through hands-on challenges. Built with React + TypeScript +
+[Tone.js](https://tonejs.github.io/). BeatLab ships zero audio files — every built-in sound
+is synthesized live in Web Audio; the only samples are the ones you import yourself.
 
-## Run it
+**Live at [willpatrick.xyz/musiclearning](https://willpatrick.xyz/musiclearning)** — no
+install needed. Use headphones or decent speakers; there's a real sub bass in here.
+
+## Run it locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:5173. Use headphones or decent speakers — there's a real sub bass in here.
+Open http://localhost:5173/musiclearning/.
 
 ## What's inside
+
+Three modes, one instrument: **Lessons** (the guided curriculum), **Sandbox** (same gear,
+no rules), and **Track Lab** (deconstruct real songs from your own library).
 
 **99 lessons across 11 modules**, each with a task, hints, and a checker that gives
 specific feedback (e.g. "Note 3 should be E3, but it's D#3"). Lessons marked ↻ are
@@ -51,16 +58,27 @@ preloaded with a 4-track groove to mangle.
 
 ## The instrument
 
-- **Piano roll** — click to draw notes (length selector: 1/16 → 1 bar), click a note to delete,
-  scale rows highlighted in relevant lessons, Space = play/stop
+- **Piano roll** — draw notes (1/16 → 1 bar), box-select and move with arrow keys,
+  scale rows highlighted in relevant lessons, Space = play/stop, full undo/redo
 - **Step sequencer** — 16-step, 5-lane synthesized 909-style kit (membrane kick,
-  noise snare/clap, FM hats)
-- **Synth device** — per-track subtractive synth: 4 waveforms → low-pass filter
-  (cutoff + resonance) → ADSR amp envelope → volume, controlled with draggable knobs
+  noise snare/clap, FM hats), swing control
+- **Synth device** — per-track subtractive/FM synth: main + second + sub oscillator with
+  noise, detune/unison spread, FM (harmonicity + mod index), glide, and an arpeggiator →
+  filter (cutoff, resonance, keytracking, velocity→cutoff, filter envelope) → ADSR →
+  two tempo-syncable LFOs and a one-knob macro
+- **Mixing chain per track** — 3-band EQ, compressor, distortion/bitcrusher (reorderable
+  chain), sidechain ducking, reverb/delay sends, pan/volume — plus automation lanes in
+  Sandbox and a master bus with limiter + level meter
+- **Sampler** — load any audio file onto the 5 drum pads, auto-sliced; Track Lab's ✂ chops
+  sections of a real song straight onto the same pads
+- **Play it live** — connect a MIDI keyboard (Web MIDI) or use "Type to Play" on your
+  computer keyboard; record takes with adjustable quantize strength
 - Progress is saved in localStorage.
 
 ## Skills that transfer to Ableton
 
-Everything maps 1:1: the piano roll ↔ MIDI clips, the step grid ↔ Drum Rack,
-the device panel ↔ Analog/Operator/Wavetable macros (osc → filter → envelope is the
-same signal chain), and the energy-curve grid ↔ Session/Arrangement view clip launching.
+Everything maps 1:1: the piano roll ↔ MIDI clips, the step grid ↔ Drum Rack, the device
+panel ↔ Analog/Operator macros (osc → filter → envelope is the same signal chain), the
+EQ/compressor/sends chain ↔ a channel strip with return tracks, automation lanes ↔
+Ableton's automation view, and the energy-curve grid ↔ Session/Arrangement view clip
+launching. Track Lab is the classic "deconstruct a reference track" exercise, built in.
