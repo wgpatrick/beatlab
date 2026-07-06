@@ -141,6 +141,7 @@ const serumLessons: Lesson[] = [
       'Static WT POS sets the center of the scan; DEPTH sets how far around it the LFO swings.',
     ],
     centerPitch: 48,
+    target: { params: patch({ osc: 'wavetable', wtTable: 'vocal', wtPos: 0.5, resonance: 2.75, cutoff: 10007, attack: 0.15, decay: 0.3, sustain: 0.85, release: 0.8, lfoDest: 'wtPos', lfoDepth: 0.6, lfoSync: true, lfoSyncRate: '1/1', sendReverb: 0.28, volume: -10 }), phrase: notesToPhraseSeconds([n(45, 0, 16), n(52, 0, 16)], 110) },
     setup: () => ({
       tracks: [
         synthTrack('synth', 'Motion', '#61afef', { osc: 'wavetable', wtTable: 'vocal', wtPos: 0.5, cutoff: 9000, attack: 0.15, decay: 0.3, sustain: 0.85, release: 0.8, lfoDest: 'off', lfoDepth: 0, lfoSync: false, volume: -10 }, [n(45, 0, 16), n(52, 0, 16)]),
@@ -212,6 +213,7 @@ const serumLessons: Lesson[] = [
       'A supersaw wants to be bright — if the cutoff chokes it below 5 kHz the detune shimmer has no harmonics to shimmer with.',
     ],
     centerPitch: 64,
+    target: { params: patch({ osc: 'sawtooth', osc2Type: 'sawtooth', osc2Level: 0.6, osc2Detune: 21.9, unisonVoices: 7, unisonWidth: 0.5, cutoff: 12458, resonance: 3.29, attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.175, volume: -12 }), phrase: notesToPhraseSeconds(riffOneBar(64), 138) },
     setup: () => ({
       tracks: [
         synthTrack('synth', 'Lead', '#c678dd', { osc: 'sawtooth', cutoff: 3000, attack: 0.05, decay: 0.2, sustain: 0.6, release: 0.3, osc2Type: 'sawtooth', osc2Level: 0.2, osc2Detune: 8, unisonVoices: 1, volume: -12 }, riffOneBar(64)),
@@ -248,6 +250,7 @@ const serumLessons: Lesson[] = [
       'The dark base cutoff matters: the envelope sweeps UP from wherever the cutoff sits, so a bright base leaves it nowhere to go.',
     ],
     centerPitch: 64,
+    target: { params: patch({ osc: 'sawtooth', cutoff: 666, resonance: 1.71, attack: 0.005, decay: 0.321, sustain: 0.2, release: 0.385, filterEnvAmount: 0.61, filterEnvAttack: 0.01, filterEnvDecay: 0.157, filterEnvSustain: 0.1, filterEnvRelease: 0.2, sendReverb: 0.11, volume: -10 }), phrase: notesToPhraseSeconds(PLUCK_NOTES(), 126) },
     setup: () => ({
       tracks: [
         synthTrack('synth', 'Pluck', '#f7c948', { osc: 'sawtooth', cutoff: 900, resonance: 1.5, attack: 0.005, decay: 0.3, sustain: 0.7, release: 0.3, filterEnvAmount: 0, filterEnvAttack: 0.01, filterEnvDecay: 0.2, filterEnvSustain: 0.3, filterEnvRelease: 0.2, volume: -10 }, PLUCK_NOTES()),
@@ -317,6 +320,7 @@ const serumLessons: Lesson[] = [
       'Flat drawings do nothing — the LFO only moves the cutoff as far as the shape itself moves.',
     ],
     centerPitch: 38,
+    target: { params: patch({ osc: 'sawtooth', cutoff: 1091, resonance: 4, attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.3, lfoDest: 'cutoff', lfoShape: 'custom', lfoSteps: Array.from({ length: 16 }, (_, i) => 1 - i / 15), lfoSync: true, lfoSyncRate: '1/1', lfoDepth: 0.58, distortionAmount: 0.46, distortionMix: 0.15, sendDelay: 0.04, volume: -9 }), phrase: notesToPhraseSeconds([n(31, 0, 16)], 126) },
     setup: () => ({
       tracks: [
         drumTrack({ kick: [0, 4, 8, 12], clap: [4, 12], hat: [2, 6, 10, 14] }),
@@ -355,6 +359,7 @@ const serumLessons: Lesson[] = [
       'Same chord, different drawing = different song. Redraw the pattern a few times with the loop running and hear the rhythm section move.',
     ],
     centerPitch: 62,
+    target: { params: patch({ osc: 'sawtooth', osc2Type: 'sawtooth', osc2Level: 0.5, osc2Detune: 10.1, cutoff: 3305, attack: 0.05, decay: 0.3, sustain: 1, release: 0.15, lfoDest: 'amp', lfoShape: 'custom', lfoSteps: [1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0], lfoSync: true, lfoSyncRate: '1/1', lfoDepth: 0.87, volume: -11 }), phrase: notesToPhraseSeconds([n(57, 0, 16), n(62, 0, 16), n(66, 0, 16)], 138) },
     setup: () => ({
       tracks: [
         drumTrack({ kick: [0, 4, 8, 12], openhat: [2, 6, 10, 14] }),
@@ -393,6 +398,7 @@ const serumLessons: Lesson[] = [
       'In Serum this is the NOISE oscillator + an LFO (or ENV in one-shot mode) ramping cutoff or pitch. Longer risers just use 2- or 4-bar rates — same drawing.',
     ],
     centerPitch: 48,
+    target: { params: patch({ osc: 'sine', cutoff: 1082, resonance: 2.35, attack: 0.05, decay: 0.2, sustain: 1, release: 0.4, noiseLevel: 0.75, lfoDest: 'cutoff', lfoShape: 'custom', lfoSteps: Array.from({ length: 16 }, (_, i) => i / 15), lfoSync: true, lfoSyncRate: '1/1', lfoDepth: 0.8, sendReverb: 0.3, volume: -10 }), phrase: notesToPhraseSeconds([n(48, 0, 16)], 128) },
     setup: () => ({
       tracks: [
         drumTrack({ kick: [0, 4, 8, 12], snare: [4, 12] }),
@@ -434,6 +440,7 @@ const serumLessons: Lesson[] = [
       'In Serum the same stack reads: LFO 1 → WT POS (or cutoff), Warp = FM (from B), then Distortion in the FX tab. Three panels, one monster.',
     ],
     centerPitch: 34,
+    target: { params: patch({ osc: 'sawtooth', cutoff: 1231, resonance: 4.3, attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.2, lfoDest: 'cutoff', lfoSync: true, lfoSyncRate: '1/4', lfoDepth: 0.54, fmLevel: 0.5, fmHarmonicity: 2.5, fmModIndex: 6.71, distortionAmount: 0.4, distortionMix: 0.4, volume: -9 }), phrase: notesToPhraseSeconds([n(28, 0, 16)], 140) },
     setup: () => ({
       tracks: [
         drumTrack({ kick: [0], snare: [8] }),
@@ -471,6 +478,7 @@ const serumLessons: Lesson[] = [
       'This same recipe in Serum: a PWM wavetable on OSC A, unison + detune, sub osc on, portamento up in the GLOBAL tab, chorus in FX.',
     ],
     centerPitch: 40,
+    target: { params: patch({ osc: 'wavetable', wtTable: 'pwm', wtPos: 0.54, cutoff: 7977, resonance: 1, attack: 0.01, decay: 0.2, sustain: 0.9, release: 0.25, osc2Type: 'square', osc2Level: 0.6, osc2Detune: 23.2, subLevel: 0.38, glide: 0.083, sendMod: 0.26, volume: -10 }), phrase: notesToPhraseSeconds([n(33, 0, 4), n(45, 4, 2), n(33, 6, 2), n(40, 8, 4), n(45, 12, 2), n(33, 14, 2)], 150) },
     setup: () => ({
       tracks: [
         drumTrack({ kick: [0, 2, 4, 6, 8, 10, 12, 14] }),
@@ -507,6 +515,7 @@ const serumLessons: Lesson[] = [
       'In Serum pad presets, look at the mod matrix: there is ALWAYS a slow LFO or envelope on WT POS. Now you know what it\'s doing there.',
     ],
     centerPitch: 57,
+    target: { params: patch({ osc: 'wavetable', wtTable: 'vocal', wtPos: 0.4, osc2Type: 'sawtooth', osc2Level: 0.5, osc2Detune: 18, cutoff: 3745, attack: 0.4, decay: 0.3, sustain: 0.9, release: 0.9, unisonVoices: 5, unisonWidth: 0.61, lfoDest: 'wtPos', lfoDepth: 0.39, lfoSync: true, lfoSyncRate: '1/1', sendReverb: 0.35, volume: -12 }), phrase: notesToPhraseSeconds([n(50, 0, 16), n(57, 0, 16), n(60, 0, 16), n(64, 0, 16)], 100) },
     setup: () => ({
       tracks: [
         synthTrack('synth', 'Pad', '#98c379', { osc: 'sawtooth', osc2Type: 'sawtooth', osc2Level: 0.5, osc2Detune: 18, cutoff: 5000, attack: 0.01, decay: 0.3, sustain: 0.9, release: 0.2, unisonVoices: 1, unisonWidth: 0, lfoDest: 'off', lfoDepth: 0, lfoSync: false, sendReverb: 0.1, volume: -12 }, [n(50, 0, 16), n(57, 0, 16), n(60, 0, 16), n(64, 0, 16)]),
@@ -544,6 +553,7 @@ const serumLessons: Lesson[] = [
       'Real bell ratios cluster near 3.5 and 5.4. The DX7\'s famous E.PIANO 1 used exactly this trick, quieter.',
     ],
     centerPitch: 72,
+    target: { params: patch({ osc: 'sine', cutoff: 9000, attack: 0.005, decay: 0.519, sustain: 0.1, release: 0.8, fmLevel: 0.79, fmHarmonicity: 3.5, fmModIndex: 8, sendReverb: 0.03, volume: -11 }), phrase: notesToPhraseSeconds([n(72, 0, 3), n(76, 4, 3), n(79, 8, 3), n(74, 12, 3)], 90) },
     setup: () => ({
       tracks: [
         drumTrack({ kick: [0, 8], hat: [4, 12] }),
