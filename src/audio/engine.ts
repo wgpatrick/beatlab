@@ -2,6 +2,7 @@ import * as Tone from 'tone'
 import { DRUM_LANES, type AutomatableParam, type AutomationPoint, type DrumLane, type InsertKind, type SyncDivision, type SynthParams, type TargetPatch, type Track } from '../types'
 import { useStore } from '../state/store'
 import { wtPartials } from './wavetables'
+import { waveformPeaks } from './analysis'
 
 // Tempo-synced LFO rate: each division's length in quarter-note beats (t = triplet, 2/3 the
 // normal length so it fits 3-in-the-space-of-2, i.e. faster; d = dotted, 1.5x the normal length,
@@ -106,12 +107,14 @@ interface DrumKit {
 // Phase I: sampling lives on the existing 'drums' track/lane model rather than a new track kind
 // or asset library — see docs/ROADMAP.md Phase I for the scoping note (avoids both bundling
 // third-party audio into the repo and the much bigger lift of a fully separate sampler track
-// type). Loading a file auto-slices it into 5 equal ("Region" mode) chunks, one per existing
-// drum lane; each lane's step-sequencer trigger plays its slice via Tone.Player instead of the
-// synthesized voice, with zero changes to the step sequencer / pattern data model itself.
-interface SampleSlice {
+// type). Loading a file starts with 5 equal ("Region" mode) slice boundaries, one per existing
+// drum lane. Boundaries are draggable (Manual mode) and each lane can be reversed independently —
+// each lane's player owns exactly its own slice audio (not an offset into one shared buffer), so
+// reversing a lane is just a reversed copy of its slice, no special-cased playback path.
+export interface SampleSlice {
   start: number
   dur: number
+  reversed: boolean
 }
 
 class Engine {
@@ -128,7 +131,9 @@ class Engine {
   private chorusBus: Tone.Chorus | null = null
   private phaserBus: Tone.Phaser | null = null
   // Phase I: loaded sample (if any) that replaces the synthesized drum kit lane-for-lane.
-  private sampleBuffer: Tone.ToneAudioBuffer | null = null
+  private sampleFullBuffer: AudioBuffer | null = null
+  private sliceBoundaries: number[] = [] // length DRUM_LANES.length + 1: [0, b1, b2, b3, duration]
+  private reversedLanes = new Set<DrumLane>()
   private samplePlayers: Partial<Record<DrumLane, Tone.Player>> = {}
   private sampleGains: Partial<Record<DrumLane, Tone.Gain>> = {}
   private sampleSlices: Partial<Record<DrumLane, SampleSlice>> = {}
@@ -263,16 +268,10 @@ class Engine {
    * wrapper around this. */
   loadDrumSampleFromBuffer(buffer: AudioBuffer, name: string) {
     this.clearDrumSample()
-    this.sampleBuffer = new Tone.ToneAudioBuffer(buffer)
-    const sliceLen = buffer.duration / DRUM_LANES.length
-    for (let i = 0; i < DRUM_LANES.length; i++) {
-      const lane = DRUM_LANES[i]
-      const gain = new Tone.Gain(1).connect(this.getMaster())
-      const player = new Tone.Player(this.sampleBuffer).connect(gain)
-      this.samplePlayers[lane] = player
-      this.sampleGains[lane] = gain
-      this.sampleSlices[lane] = { start: i * sliceLen, dur: sliceLen }
-    }
+    this.sampleFullBuffer = buffer
+    const n = DRUM_LANES.length
+    this.sliceBoundaries = Array.from({ length: n + 1 }, (_, i) => (i / n) * buffer.duration)
+    this.rebuildSlicePlayers()
     useStore.setState({ sampleLoaded: { name } })
   }
 
@@ -291,9 +290,107 @@ class Engine {
       delete this.sampleGains[lane]
       delete this.sampleSlices[lane]
     }
-    this.sampleBuffer?.dispose()
-    this.sampleBuffer = null
-    useStore.setState({ sampleLoaded: null })
+    this.sampleFullBuffer = null
+    this.sliceBoundaries = []
+    this.reversedLanes.clear()
+    useStore.setState({ sampleLoaded: null, sampleSliceMeta: null })
+  }
+
+  /** Copy [startSec, startSec+durSec) of the loaded sample into its own small buffer, optionally
+   * reversed. Each lane's player owns one of these outright rather than seeking into one shared
+   * buffer, which is what makes per-lane reverse a plain data transform instead of needing a
+   * negative-rate playback path Tone.Player doesn't have. */
+  private extractSlice(startSec: number, durSec: number, reversed: boolean): AudioBuffer {
+    const src = this.sampleFullBuffer!
+    const s0 = Math.max(0, Math.floor(startSec * src.sampleRate))
+    const s1 = Math.min(src.length, Math.floor((startSec + durSec) * src.sampleRate))
+    const len = Math.max(1, s1 - s0)
+    const ctx = Tone.getContext().rawContext
+    const out = ctx.createBuffer(src.numberOfChannels, len, src.sampleRate)
+    for (let ch = 0; ch < src.numberOfChannels; ch++) {
+      const data = new Float32Array(len)
+      src.copyFromChannel(data, ch, s0)
+      if (reversed) data.reverse()
+      out.copyToChannel(data, ch)
+    }
+    return out
+  }
+
+  /** Nearest zero-crossing to timeSec within a 10ms window — the standard sampler trick to avoid
+   * an audible click at a manually-placed slice boundary. */
+  private snapToZeroCrossing(timeSec: number): number {
+    const src = this.sampleFullBuffer
+    if (!src) return timeSec
+    const data = src.getChannelData(0)
+    const center = Math.round(timeSec * src.sampleRate)
+    const window = Math.round(0.01 * src.sampleRate)
+    let best = center
+    let bestDist = Infinity
+    const lo = Math.max(1, center - window)
+    const hi = Math.min(data.length - 1, center + window)
+    for (let i = lo; i < hi; i++) {
+      if ((data[i - 1] < 0 && data[i] >= 0) || (data[i - 1] > 0 && data[i] <= 0)) {
+        const dist = Math.abs(i - center)
+        if (dist < bestDist) {
+          bestDist = dist
+          best = i
+        }
+      }
+    }
+    return best / src.sampleRate
+  }
+
+  private rebuildSlicePlayers() {
+    if (!this.sampleFullBuffer) return
+    for (const lane of DRUM_LANES) {
+      this.samplePlayers[lane]?.dispose()
+      this.sampleGains[lane]?.dispose()
+    }
+    const meta: Partial<Record<DrumLane, SampleSlice>> = {}
+    DRUM_LANES.forEach((lane, i) => {
+      const start = this.sliceBoundaries[i]
+      const dur = Math.max(0.01, this.sliceBoundaries[i + 1] - start)
+      const reversed = this.reversedLanes.has(lane)
+      const region = this.extractSlice(start, dur, reversed)
+      const gain = new Tone.Gain(1).connect(this.getMaster())
+      const player = new Tone.Player(new Tone.ToneAudioBuffer(region)).connect(gain)
+      this.samplePlayers[lane] = player
+      this.sampleGains[lane] = gain
+      this.sampleSlices[lane] = { start, dur, reversed }
+      meta[lane] = { start, dur, reversed }
+    })
+    useStore.setState({ sampleSliceMeta: meta })
+  }
+
+  /** Move an interior slice boundary (index 1..DRUM_LANES.length-1 — the endpoints at 0 and the
+   * sample's duration are fixed), snapped to the nearest zero-crossing, then rebuild every lane's
+   * player since a moved boundary reshapes both neighbouring slices. */
+  setSliceBoundary(index: number, timeSec: number) {
+    if (!this.sampleFullBuffer || index < 1 || index >= this.sliceBoundaries.length - 1) return
+    const min = this.sliceBoundaries[index - 1] + 0.02
+    const max = this.sliceBoundaries[index + 1] - 0.02
+    if (min >= max) return
+    const clamped = Math.min(Math.max(timeSec, min), max)
+    this.sliceBoundaries[index] = this.snapToZeroCrossing(clamped)
+    this.rebuildSlicePlayers()
+  }
+
+  toggleSliceReverse(lane: DrumLane) {
+    if (!this.sampleFullBuffer) return
+    if (this.reversedLanes.has(lane)) this.reversedLanes.delete(lane)
+    else this.reversedLanes.add(lane)
+    this.rebuildSlicePlayers()
+  }
+
+  getSliceBoundaries(): number[] {
+    return this.sliceBoundaries
+  }
+
+  /** Downsampled peaks of the loaded sample for the slice editor's waveform view. */
+  getSampleWaveformPeaks(buckets = 400): number[] {
+    const src = this.sampleFullBuffer
+    if (!src) return []
+    return waveformPeaks(src.getChannelData(0), buckets)
   }
 
   // ---------- Track Lab: full-song deconstruction ----------
@@ -376,14 +473,15 @@ class Engine {
 
   triggerDrum(lane: DrumLane, time?: number, velocity = 1) {
     const t = time ?? this.nextPreviewTime()
-    const slice = this.sampleSlices[lane]
     const player = this.samplePlayers[lane]
-    if (slice && player) {
+    if (player) {
       // Approximate per-hit velocity via the slice's own gain node rather than a real per-voice
       // envelope — Tone.Player has no built-in velocity concept, and re-creating one for a single
-      // shared player per lane isn't worth it for a step-resolution teaching engine.
+      // shared player per lane isn't worth it for a step-resolution teaching engine. Each player's
+      // buffer already IS just this lane's slice (forward or reversed), so start(t) with no
+      // offset plays the whole thing from its own beginning.
       this.sampleGains[lane]!.gain.value = velocity
-      player.start(t, slice.start, slice.dur)
+      player.start(t)
       return
     }
     if (!this.drums) return

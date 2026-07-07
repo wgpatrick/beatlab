@@ -1594,6 +1594,40 @@ button.seq-label:hover {
   line-height: 1.45;
 }
 
+/* ---------- Phase I: manual sample-slice editor ---------- */
+.sample-slice-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.sample-slice-wave {
+  width: 100%;
+  height: 64px;
+  background: #16181c;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.sample-slice-labels {
+  display: flex;
+  gap: 2px;
+}
+.sample-slice-label {
+  flex: 1;
+  background: var(--panel3);
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  font-size: 9px;
+  padding: 3px 0;
+  letter-spacing: 0.5px;
+}
+.sample-slice-label.reversed {
+  border-color: currentColor;
+  font-weight: 700;
+}
+
 /* ---------- Wave 3: drawable LFO shape editor ---------- */
 .lfo-step-editor {
   flex: 1;

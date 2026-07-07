@@ -290,6 +290,25 @@ export function sectionAvg(analysis: TrackAnalysis, s: TrackSection): BarFeature
   return out
 }
 
+/** Bucket-max waveform overview, normalized 0..1 — shared by Track Lab's song-length view and the
+ * Phase I sample-slice editor's much shorter one-sample view. */
+export function waveformPeaks(data: Float32Array, buckets: number): number[] {
+  const peaks: number[] = new Array(buckets).fill(0)
+  const per = Math.max(1, Math.floor(data.length / buckets))
+  for (let i = 0; i < buckets; i++) {
+    let max = 0
+    const off = i * per
+    for (let j = 0; j < per; j += 4) {
+      const v = Math.abs(data[off + j] ?? 0)
+      if (v > max) max = v
+    }
+    peaks[i] = max
+  }
+  const peakMax = Math.max(1e-6, ...peaks)
+  for (let i = 0; i < buckets; i++) peaks[i] /= peakMax
+  return peaks
+}
+
 // ---------- main entry ----------
 
 export interface AnalyzeOptions {
@@ -349,20 +368,7 @@ export function analyzeMono(data: Float32Array, sampleRate: number, opts: Analyz
   const sections = detectSections(bars)
 
   // waveform overview peaks
-  const buckets = 1200
-  const peaks: number[] = new Array(buckets).fill(0)
-  const per = Math.max(1, Math.floor(data.length / buckets))
-  for (let i = 0; i < buckets; i++) {
-    let max = 0
-    const off = i * per
-    for (let j = 0; j < per; j += 4) {
-      const v = Math.abs(data[off + j] ?? 0)
-      if (v > max) max = v
-    }
-    peaks[i] = max
-  }
-  const peakMax = Math.max(1e-6, ...peaks)
-  for (let i = 0; i < buckets; i++) peaks[i] /= peakMax
+  const peaks = waveformPeaks(data, 1200)
 
   return {
     durationSec,

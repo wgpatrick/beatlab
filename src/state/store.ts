@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ArrangementState, AutomatableParam, AutomationCurve, DrumLane, DrumPattern, Note, Scene, SectionType, SynthParams, Track } from '../types'
-import { engine } from '../audio/engine'
+import { engine, type SampleSlice } from '../audio/engine'
 import { midiInput } from '../audio/midi'
 import { handleMidiNoteOff, handleMidiNoteOn, releaseAllHeld } from '../audio/midiRecorder'
 import { setComputerKeyboardEnabled as setComputerKeyboardListening, setComputerKeyboardHandlers } from '../audio/computerKeyboard'
@@ -92,6 +92,10 @@ export interface AppState {
   /** Phase I: a loaded sample (if any) replacing the synthesized drum kit lane-for-lane, set
    * directly by Engine (mirrors how it already sets currentStep). */
   sampleLoaded: { name: string } | null
+  /** Manual slicing: each lane's current {start, dur, reversed} within the loaded sample, set
+   * directly by Engine whenever a boundary moves or a lane's reverse is toggled — drives the
+   * slice-editor waveform view and lets lessons grade "did you move a boundary / reverse a pad". */
+  sampleSliceMeta: Partial<Record<DrumLane, SampleSlice>> | null
   /** Phase K: master bus loudness in dBFS (via Tone.Meter), set directly by Engine once per step
    * during playback — an approximate/instantaneous reading, not true integrated LUFS. */
   masterLevel: number | null
@@ -143,6 +147,8 @@ export interface AppState {
   setMacroValue: (trackId: string, value: number) => void
   loadDrumSample: (file: File) => Promise<void>
   clearDrumSample: () => void
+  setSampleSliceBoundary: (index: number, timeSec: number) => void
+  toggleSampleSliceReverse: (lane: DrumLane) => void
   setComputerKeyboardEnabled: (on: boolean) => void
   setScaleLock: (lock: { root: number; scale: string } | null) => void
   connectMidi: () => Promise<void>
@@ -199,6 +205,7 @@ export const useStore = create<AppState>()((set, get) => ({
   quantizeStrength: 0,
   automationArm: null,
   sampleLoaded: null,
+  sampleSliceMeta: null,
   masterLevel: null,
   computerKeyboardEnabled: false,
   trackLab: emptyTrackLab(),
@@ -388,7 +395,14 @@ export const useStore = create<AppState>()((set, get) => ({
     const state = get()
     const lesson = findLesson(state.currentLessonId)
     if (!lesson) return
-    const result = lesson.validate({ tracks: state.tracks, arrangement: state.arrangement, params: state.lessonParams, sampleLoaded: state.sampleLoaded, trackLab: state.trackLab })
+    const result = lesson.validate({
+      tracks: state.tracks,
+      arrangement: state.arrangement,
+      params: state.lessonParams,
+      sampleLoaded: state.sampleLoaded,
+      sampleSliceMeta: state.sampleSliceMeta,
+      trackLab: state.trackLab,
+    })
     let completed = state.completed
     if (result.pass && !completed.includes(lesson.id)) {
       completed = [...completed, lesson.id]
@@ -650,6 +664,10 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   clearDrumSample: () => engine.clearDrumSample(),
+
+  setSampleSliceBoundary: (index, timeSec) => engine.setSliceBoundary(index, timeSec),
+
+  toggleSampleSliceReverse: (lane) => engine.toggleSliceReverse(lane),
 
   // ---------- Musical typing (computer keyboard as a MIDI stand-in) ----------
 

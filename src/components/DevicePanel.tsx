@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { DRUM_LABELS, DRUM_LANES, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SyncDivision, type SynthParams, type Track, type WtTable } from '../types'
-import { engine } from '../audio/engine'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { DRUM_LABELS, DRUM_LANES, type DrumLane, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SyncDivision, type SynthParams, type Track, type WtTable } from '../types'
+import { engine, type SampleSlice } from '../audio/engine'
 import { useStore } from '../state/store'
 import { Knob } from './Knob'
 import { Scope } from './Scope'
@@ -201,6 +201,124 @@ function LfoStepEditor({ steps, onChange }: { steps: number[]; onChange: (s: num
   )
 }
 
+const SAMPLE_LANE_COLORS: Record<DrumLane, string> = {
+  kick: '#e06c75',
+  snare: '#f7c948',
+  clap: '#c678dd',
+  hat: '#56b6c2',
+  openhat: '#98c379',
+}
+
+/** Phase I manual slicing: drag a boundary line to reslice (snapped to the nearest zero-crossing
+ * by the engine so the cut doesn't click), click a lane's label to reverse just that pad. */
+function SampleSliceEditor({
+  peaks,
+  duration,
+  boundaries,
+  sliceMeta,
+  onDragBoundary,
+  onToggleReverse,
+}: {
+  peaks: number[]
+  duration: number
+  boundaries: number[]
+  sliceMeta: Partial<Record<DrumLane, SampleSlice>>
+  onDragBoundary: (index: number, timeSec: number) => void
+  onToggleReverse: (lane: DrumLane) => void
+}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const dragIndex = useRef<number | null>(null)
+
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas || duration <= 0) return
+    const W = (canvas.width = canvas.clientWidth * 2)
+    const H = (canvas.height = canvas.clientHeight * 2)
+    const ctx = canvas.getContext('2d')!
+    ctx.clearRect(0, 0, W, H)
+    DRUM_LANES.forEach((lane, i) => {
+      const x0 = (boundaries[i] / duration) * W
+      const x1 = (boundaries[i + 1] / duration) * W
+      ctx.fillStyle = SAMPLE_LANE_COLORS[lane]
+      ctx.globalAlpha = 0.14
+      ctx.fillRect(x0, 0, x1 - x0, H)
+    })
+    ctx.globalAlpha = 1
+    ctx.fillStyle = '#5a6a7a'
+    const n = peaks.length
+    const bw = W / Math.max(1, n)
+    for (let i = 0; i < n; i++) {
+      const h = Math.max(2, peaks[i] * H * 0.85)
+      ctx.fillRect(i * bw, (H - h) / 2, Math.max(1, bw * 0.8), h)
+    }
+    for (let i = 1; i < boundaries.length - 1; i++) {
+      const x = (boundaries[i] / duration) * W
+      ctx.strokeStyle = '#ffb02e'
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, H)
+      ctx.stroke()
+    }
+  }, [peaks, duration, boundaries])
+
+  const xToTime = (clientX: number) => {
+    const canvas = ref.current!
+    const rect = canvas.getBoundingClientRect()
+    return Math.max(0, Math.min(duration, ((clientX - rect.left) / rect.width) * duration))
+  }
+
+  const nearestBoundaryIndex = (timeSec: number) => {
+    let best = -1
+    let bestDist = Infinity
+    for (let i = 1; i < boundaries.length - 1; i++) {
+      const dist = Math.abs(boundaries[i] - timeSec)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = i
+      }
+    }
+    return bestDist < duration * 0.03 ? best : -1
+  }
+
+  return (
+    <div className="sample-slice-editor">
+      <canvas
+        ref={ref}
+        className="sample-slice-wave"
+        title="Drag a boundary line to reslice — snaps to the nearest zero-crossing to avoid clicks"
+        onPointerDown={(e) => {
+          const idx = nearestBoundaryIndex(xToTime(e.clientX))
+          if (idx < 0) return
+          dragIndex.current = idx
+          e.currentTarget.setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={(e) => {
+          if (dragIndex.current === null) return
+          onDragBoundary(dragIndex.current, xToTime(e.clientX))
+        }}
+        onPointerUp={() => {
+          dragIndex.current = null
+        }}
+      />
+      <div className="sample-slice-labels">
+        {DRUM_LANES.map((lane) => (
+          <button
+            key={lane}
+            className={`sample-slice-label ${sliceMeta[lane]?.reversed ? 'reversed' : ''}`}
+            style={{ color: SAMPLE_LANE_COLORS[lane] }}
+            onClick={() => onToggleReverse(lane)}
+            title={`${DRUM_LABELS[lane]} — click to ${sliceMeta[lane]?.reversed ? 'un-reverse' : 'reverse'} this pad`}
+          >
+            {DRUM_LABELS[lane]}
+            {sliceMeta[lane]?.reversed ? ' ◄' : ''}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /** Collapsible wrapper for one device-panel section — click the title to fold it away, so a
  * lesson exposing many sections at once (e.g. everything up through Synth Depth II) can still
  * fit in a short device panel without every knob row being visible simultaneously. */
@@ -223,9 +341,13 @@ export function DevicePanel({ track }: { track: Track }) {
   const paramScores = useStore((s) => s.paramScores)
   const allTracks = useStore((s) => s.tracks)
   const sampleLoaded = useStore((s) => s.sampleLoaded)
+  const sampleSliceMeta = useStore((s) => s.sampleSliceMeta)
   const loadDrumSample = useStore((s) => s.loadDrumSample)
   const clearDrumSample = useStore((s) => s.clearDrumSample)
+  const setSampleSliceBoundary = useStore((s) => s.setSampleSliceBoundary)
+  const toggleSampleSliceReverse = useStore((s) => s.toggleSampleSliceReverse)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const samplePeaks = useMemo(() => (sampleLoaded ? engine.getSampleWaveformPeaks(300) : []), [sampleLoaded])
 
   const visibleParams = lesson?.visibleParams
   const visible = (key: keyof SynthParams) => !visibleParams || visibleParams.includes(key)
@@ -266,11 +388,34 @@ export function DevicePanel({ track }: { track: Track }) {
               </button>
             )}
           </div>
-          <div className="device-note" style={{ padding: '8px 0 0' }}>
-            {sampleLoaded
-              ? `Loaded "${sampleLoaded.name}", auto-sliced into 5 equal chunks across the pads above — each pad now plays its slice instead of the synthesized voice.`
-              : 'Load any short audio file to auto-slice it across the 5 pads (equal regions), replacing the synthesized kit lane-for-lane.'}
-          </div>
+          {sampleLoaded && sampleSliceMeta ? (
+            (() => {
+              const boundaries = [
+                0,
+                ...DRUM_LANES.map((lane) => (sampleSliceMeta[lane]?.start ?? 0) + (sampleSliceMeta[lane]?.dur ?? 0)),
+              ]
+              const duration = boundaries[boundaries.length - 1]
+              return (
+                <SampleSliceEditor
+                  peaks={samplePeaks}
+                  duration={duration}
+                  boundaries={boundaries}
+                  sliceMeta={sampleSliceMeta}
+                  onDragBoundary={(i, t) => setSampleSliceBoundary(i, t)}
+                  onToggleReverse={(lane) => toggleSampleSliceReverse(lane)}
+                />
+              )
+            })()
+          ) : (
+            <div className="device-note" style={{ padding: '8px 0 0' }}>
+              Load any short audio file to auto-slice it across the 5 pads (equal regions), replacing the synthesized kit lane-for-lane.
+            </div>
+          )}
+          {sampleLoaded && (
+            <div className="device-note" style={{ padding: '8px 0 0' }}>
+              Loaded "{sampleLoaded.name}" — drag a boundary line above to reslice by hand, click a pad's label to reverse it.
+            </div>
+          )}
         </Section>
         <div className="device-note">
           909-style synthesized kit — kick from a pitched membrane, snare/clap from filtered noise,

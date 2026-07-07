@@ -1,4 +1,5 @@
-import { DRUM_LABELS, DRUM_LANES } from '../types'
+import { DRUM_LABELS, DRUM_LANES, type DrumLane } from '../types'
+import type { SampleSlice } from '../audio/engine'
 import {
   drumTrack,
   fail,
@@ -11,6 +12,27 @@ import {
   type Lesson,
   type Module,
 } from './framework'
+
+// how far a moved boundary must sit from the equal-split default (as a fraction of total sample
+// duration) to count as a deliberate manual reslice rather than sub-pixel drag noise
+const RESLICE_EPSILON = 0.02
+
+function totalSampleDuration(meta: Partial<Record<DrumLane, SampleSlice>>): number {
+  const last = meta[DRUM_LANES[DRUM_LANES.length - 1]]
+  return last ? last.start + last.dur : 0
+}
+
+function movedBoundaryCount(meta: Partial<Record<DrumLane, SampleSlice>>): number {
+  const dur = totalSampleDuration(meta)
+  if (dur <= 0) return 0
+  let moved = 0
+  DRUM_LANES.forEach((lane, i) => {
+    const start = meta[lane]?.start ?? 0
+    const defaultStart = (i / DRUM_LANES.length) * dur
+    if (Math.abs(start - defaultStart) / dur > RESLICE_EPSILON) moved++
+  })
+  return moved
+}
 
 const DRUMS = 'Drum Programming'
 const STYLES = 'Rhythm Styles'
@@ -162,6 +184,80 @@ const drumLessons: Lesson[] = [
       const total = DRUM_LANES.reduce((acc, l) => acc + laneSteps(t, l).length, 0)
       if (total < 6) return fail(`Program at least 6 hits using your loaded sample\'s pads (you have ${total}).`)
       return pass(`Loaded "${ctx.sampleLoaded.name}", sliced across 5 pads, sequenced exactly like the synthesized kit — that\'s the core sampling workflow every drum-sampler plugin builds on.`)
+    },
+  },
+  {
+    id: 'vocal-chop-manual-slice',
+    module: DRUMS,
+    title: 'Vocal Chops: Slice on the Ear-Catching Moment',
+    summary:
+      'The Region mode from the last lesson divides blindly into 5 equal chunks — for a vocal, that cuts words in half. Every real vocal-chop tutorial says the same thing: don\'t chop uniformly. Listen through and isolate 3-5 golden moments — the ad-lib, the word that catches your ear — as your building blocks. The waveform in the SAMPLE section now lets you drag those 4 boundary lines by hand (Ableton calls this Manual mode); each drag snaps to the nearest zero-crossing so the cut doesn\'t click.',
+    task: 'Load a vocal sample (or any sample with distinct words/hits), drag at least 2 of the 4 boundary lines to land on phrase boundaries instead of the equal-split default, then program at least 4 hits using the resliced pads.',
+    hints: [
+      'A phone voice memo saying a few words works great for this — you\'ll actually hear the difference a manual slice makes.',
+      'Watch the waveform, not the clock — drag a line to just before a word starts, not to some equal fraction of the file.',
+      'Fewer, well-chosen slices beats a hundred random chops — that\'s true whether you\'re slicing 5 pads or 50.',
+    ],
+    setup: () => ({ tracks: [drumTrack()], loopBars: 1, bpm: 100, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      if (!ctx.sampleLoaded) return fail('No sample loaded yet — use Load Sample in the device panel\'s SAMPLE section.')
+      const meta = ctx.sampleSliceMeta
+      if (!meta) return fail('Sample loaded but no slice data yet — try reloading it.')
+      const moved = movedBoundaryCount(meta)
+      if (moved < 2) return fail(`Drag at least 2 boundary lines off their equal-split starting position (you\'ve moved ${moved}).`)
+      const t = track(ctx, 'drums')
+      const total = DRUM_LANES.reduce((acc, l) => acc + laneSteps(t, l).length, 0)
+      if (total < 4) return fail(`Program at least 4 hits using your resliced pads (you have ${total}).`)
+      return pass('Manually resliced, not just equal-split — that\'s the difference between a naive chop and a musical one.')
+    },
+  },
+  {
+    id: 'vocal-chop-reverse',
+    module: DRUMS,
+    title: 'Reverse a Chop for Texture',
+    summary:
+      'A reversed vocal chop — the swelling "backwards" sound — is one of the most recognizable textures in sampling, from psychedelic rock reversed guitars to modern trap vocal risers. Click a pad\'s label in the SAMPLE section to reverse just that one slice; the others keep playing forward.',
+    task: 'Reverse at least one pad and use it at least once in your pattern (any lane, any step).',
+    hints: [
+      'Click the pad\'s name under the waveform, not the waveform itself, to toggle reverse.',
+      'A reversed vocal chop right before a downbeat is a classic "riser into the drop" trick.',
+      'You can reverse more than one pad — try comparing a forward vs. reversed version of the same chop.',
+    ],
+    setup: () => ({ tracks: [drumTrack()], loopBars: 1, bpm: 100, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      if (!ctx.sampleLoaded) return fail('No sample loaded yet — use Load Sample in the device panel\'s SAMPLE section.')
+      const meta = ctx.sampleSliceMeta
+      const reversedLane = meta && DRUM_LANES.find((l) => meta[l]?.reversed)
+      if (!reversedLane) return fail('No pad is reversed yet — click a pad\'s label under the waveform to flip it.')
+      const t = track(ctx, 'drums')
+      if (laneSteps(t, reversedLane).length === 0) return fail(`${DRUM_LABELS[reversedLane]} is reversed but never plays — give it at least one step.`)
+      return pass(`${DRUM_LABELS[reversedLane]} reversed and sequenced — that backwards swell is the same trick behind every "riser into the drop".`)
+    },
+  },
+  {
+    id: 'vocal-chop-hook-rhythm',
+    module: DRUMS,
+    title: 'Build a Chopped-Vocal Hook Rhythm',
+    summary:
+      'The last piece of the vocal-chop technique: sequence your slices into an actual rhythmic hook, not just scattered hits. Real vocal-chop hooks (think Flume, or any "vocal stutter" edit) lean on syncopation across several different chops, the same way a drum pattern leans on kick/snare/hat working together.',
+    task: 'Using your loaded sample\'s pads, program at least 8 hits spread across at least 3 different pads, with at least one hit that isn\'t on a downbeat (steps 1, 5, 9, 13).',
+    hints: [
+      'Reuse the same sample from the last two lessons if you like — the reslice and reverse work carries over.',
+      'Try a call-and-response: one chop on the downbeat, a different one answering just after.',
+      'Downbeats are steps 1, 5, 9, 13 — put at least one hit anywhere else to get real syncopation.',
+    ],
+    setup: () => ({ tracks: [drumTrack()], loopBars: 1, bpm: 100, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      if (!ctx.sampleLoaded) return fail('No sample loaded yet — use Load Sample in the device panel\'s SAMPLE section.')
+      const t = track(ctx, 'drums')
+      const usedLanes = DRUM_LANES.filter((l) => laneSteps(t, l).length > 0)
+      const total = usedLanes.reduce((acc, l) => acc + laneSteps(t, l).length, 0)
+      if (total < 8) return fail(`Program at least 8 hits total across your sample pads (you have ${total}).`)
+      if (usedLanes.length < 3) return fail(`Spread your hits across at least 3 different pads for a real hook, not one repeated chop (you\'re using ${usedLanes.length}).`)
+      const downbeats = [0, 4, 8, 12]
+      const hasOffbeat = usedLanes.some((l) => laneSteps(t, l).some((s) => !downbeats.includes(s)))
+      if (!hasOffbeat) return fail('Add at least one hit off the downbeats (steps 1, 5, 9, 13) — that syncopation is what makes it a hook instead of a metronome.')
+      return pass('That\'s a chopped-vocal hook: several slices, syncopated, working as one rhythm — the same idea behind every vocal-chop hit you\'ve ever heard.')
     },
   },
 ]
