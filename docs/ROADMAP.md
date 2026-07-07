@@ -11,6 +11,37 @@ automation — plus a follow-up pass on Web MIDI API feasibility (browser suppor
 record-then-quantize-strength workflow) after the user asked about recording live from a physical MIDI
 keyboard. As before: not a full spec, each item names the actual files/types it touches.
 
+## Post-roadmap: the sampling & drums deep-dive (2026-07-06/07, 127 lessons)
+
+Everything below A-K shipped as planned; a second wave of work then went deeper on sampling and
+drum sound design, driven by researching what production tutorials actually teach (Ableton Simpler
+workflows, vocal-chop guides, kick/snare/hat synthesis recipes, drum-machine genre history):
+
+- **Manual sample slicing + vocal-chop arc** (`57d436b`): Phase I's blind equal-5-split gained
+  draggable slice boundaries (zero-crossing snapped) and per-pad reverse, each lane owning its own
+  extracted slice buffer. Lessons: slice on phrase boundaries, reverse a chop, chopped-vocal hook.
+- **Drum FX bus + kick/snare/hat sound design** (`f54dbf2`): a shared `DrumBus` finally routes
+  drum/sample audio through the same filter→EQ/comp/dist→sends chain synth tracks always had
+  (with LFO→cutoff/amp in the tick loop), and the previously-hardcoded kick/snare/hat voices grew
+  real params (kick tune/punch/decay, snare tone/decay + a new tonal shell layer, hat decays/tone).
+  Drum lessons opt into the new device sections via `visibleParams`; the Sandbox shows everything.
+- **Kit presets + per-pad repitch** (`9d54b13`): Init/808/909/Linn character presets (bundles of
+  the new drum params, auto-highlighting when knobs match) with a Drum Machine Museum lesson; and
+  −/+ semitone steppers per sample pad using honest playback-rate repitch. Fixed a Sandbox
+  visibility bug from the gating change.
+- **Starter samples + Warp vs Speed** (this wave): three public-domain recordings (two US
+  military-band choral works + a 1916 Edison shellac) streamed on demand from Wikimedia Commons —
+  nothing bundled in the repo, CORS verified — so the sampling lessons no longer require students
+  to bring their own file; and a kit-wide Speed (playback-rate) vs Warp (`Tone.GrainPlayer`
+  granular, length-preserving) pitch-mode toggle with an ear-training lesson on hearing the
+  chipmunk-vs-grain artifact tradeoff.
+
+Serum Lab also gained machine-tuned target patches for its 10 archetype lessons (`4c2c692`),
+produced by the golden-ears hill-climbing experiment (Audiobox Aesthetics + CLAP scoring).
+
+Still open from this wave's scoping: genre-kit integration (Genre Lab lessons actually switching
+to the 808/909 presets), and richer starter-sample curation.
+
 ## Status: Phases A-K all shipped (2026-07-04)
 
 All eleven phases (A through K, items 1-50) are implemented, verified (headless-browser-driven), and

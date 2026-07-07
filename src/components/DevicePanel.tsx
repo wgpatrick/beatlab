@@ -201,6 +201,37 @@ function LfoStepEditor({ steps, onChange }: { steps: number[]; onChange: (s: num
   )
 }
 
+// Starter samples for the chop lessons: streamed on demand from Wikimedia Commons (CORS `*`,
+// verified), never bundled — all three are unambiguously public domain in the US (two are federal
+// works, the 1916 Edison is pre-1931). A ~12s window keeps the 5 equal pads usable; students
+// reslice from there. The 1916 shellac's grit is a feature: that IS the classic sampling texture.
+const STARTER_SAMPLES: { label: string; name: string; url: string; startSec: number; durSec: number; credit: string }[] = [
+  {
+    label: 'Choir',
+    name: 'Angels We Have Heard on High (US Army Band Chorus)',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/8/87/U.S._Army_Band_-_Angels_We_Have_Heard_on_High.ogg',
+    startSec: 2,
+    durSec: 12,
+    credit: 'A cappella choir — U.S. Army Band Chorus, public domain (U.S. federal work), streamed from Wikimedia Commons',
+  },
+  {
+    label: 'Vocal',
+    name: 'America the Beautiful (USAF Singing Sergeants)',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/5/58/America_the_Beautiful.ogg',
+    startSec: 10,
+    durSec: 12,
+    credit: 'Choral vocals — The Singing Sergeants, U.S. Air Force Band, public domain (U.S. federal work), streamed from Wikimedia Commons',
+  },
+  {
+    label: '1916 Shellac',
+    name: 'Hallelujah Chorus (Edison recording, 1916)',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/9/90/Messiah_Hallelujah_Chorus_1916.ogg',
+    startSec: 30,
+    durSec: 12,
+    credit: 'A 1916 Edison recording — public domain (pre-1931), streamed from Wikimedia Commons. A century of surface noise included, free of charge',
+  },
+]
+
 const SAMPLE_LANE_COLORS: Record<DrumLane, string> = {
   kick: '#e06c75',
   snare: '#f7c948',
@@ -370,6 +401,10 @@ export function DevicePanel({ track }: { track: Track }) {
   const clearDrumSample = useStore((s) => s.clearDrumSample)
   const setSampleSliceBoundary = useStore((s) => s.setSampleSliceBoundary)
   const setSampleSlicePitch = useStore((s) => s.setSampleSlicePitch)
+  const loadStarterSample = useStore((s) => s.loadStarterSample)
+  const samplePitchMode = useStore((s) => s.samplePitchMode)
+  const setSamplePitchMode = useStore((s) => s.setSamplePitchMode)
+  const [starterLoading, setStarterLoading] = useState<string | null>(null)
   const toggleSampleSliceReverse = useStore((s) => s.toggleSampleSliceReverse)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const samplePeaks = useMemo(() => (sampleLoaded ? engine.getSampleWaveformPeaks(300) : []), [sampleLoaded])
@@ -452,6 +487,29 @@ export function DevicePanel({ track }: { track: Track }) {
                 </button>
               )}
             </div>
+            <div className="knob-row" style={{ alignItems: 'center', gap: 6, paddingTop: 6, flexWrap: 'wrap' }}>
+              <span className="device-note" style={{ padding: 0 }}>or try:</span>
+              {STARTER_SAMPLES.map((s) => (
+                <button
+                  key={s.name}
+                  className="clear-btn"
+                  disabled={starterLoading !== null}
+                  onClick={async () => {
+                    setStarterLoading(s.name)
+                    try {
+                      await loadStarterSample(s.url, s.name, s.startSec, s.durSec)
+                    } catch {
+                      // offline / fetch blocked — the note below already says these stream from the web
+                    } finally {
+                      setStarterLoading(null)
+                    }
+                  }}
+                  title={s.credit}
+                >
+                  {starterLoading === s.name ? 'Loading…' : s.label}
+                </button>
+              ))}
+            </div>
             {sampleLoaded && sampleSliceMeta ? (
               (() => {
                 const boundaries = [
@@ -474,6 +532,25 @@ export function DevicePanel({ track }: { track: Track }) {
             ) : (
               <div className="device-note" style={{ padding: '8px 0 0' }}>
                 Load any short audio file to auto-slice it across the 5 pads (equal regions), replacing the synthesized kit lane-for-lane.
+              </div>
+            )}
+            {sampleLoaded && (
+              <div className="knob-row" style={{ alignItems: 'center', gap: 6, paddingTop: 6 }}>
+                <span className="device-note" style={{ padding: 0 }}>pitch mode:</span>
+                <button
+                  className={`wave lfo-sync-btn ${samplePitchMode === 'speed' ? 'on' : ''}`}
+                  onClick={() => setSamplePitchMode('speed')}
+                  title="Classic sampler repitch (playback rate): pitch and length change together — tune up and the chop gets shorter and chipmunky. The MPC/vinyl sound."
+                >
+                  Speed
+                </button>
+                <button
+                  className={`wave lfo-sync-btn ${samplePitchMode === 'warp' ? 'on' : ''}`}
+                  onClick={() => setSamplePitchMode('warp')}
+                  title="Granular repitch (warp): the chop is cut into tiny grains and re-laid at the new pitch, so its length stays the same — what Simpler/Serum warp modes do. Listen for the grainy texture it trades for that."
+                >
+                  Warp
+                </button>
               </div>
             )}
             {sampleLoaded && (

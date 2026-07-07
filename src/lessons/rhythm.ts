@@ -173,7 +173,7 @@ const drumLessons: Lesson[] = [
       'Sampling means using a real recorded sound instead of a synthesized one. Load any short audio file — a drum loop, a vocal snippet, anything a couple seconds long — and it auto-slices into 5 equal chunks, one per pad, replacing the synthesized kick/snare/hat/clap/openhat lane-for-lane. Program a pattern with those pads exactly like you would with the synthesized kit; the step sequencer doesn\'t know or care where the sound came from.',
     task: 'In the SAMPLE section of the device panel, load any short audio file you have, then program at least 6 hits across the pads using your loaded sample.',
     hints: [
-      'Any short audio file works — this app doesn\'t ship one for you, on purpose (no license to hand out someone else\'s recording). A phone voice memo, a drum loop, even a music file all work.',
+      'No file handy? The "or try:" buttons in the SAMPLE section stream a public-domain recording straight from Wikimedia Commons — a choir, a vocal, or a gloriously crusty 1916 Edison shellac. Your own files (a voice memo, a drum loop) work too.',
       'This is exactly Ableton Simpler\'s "Region" slice mode — divide into N equal parts — one of its four slicing modes (the others: Transient, Beat, Manual).',
       'Compare it against the synthesized kit by clicking Clear — same pattern, completely different sound source.',
     ],
@@ -194,7 +194,7 @@ const drumLessons: Lesson[] = [
       'The Region mode from the last lesson divides blindly into 5 equal chunks — for a vocal, that cuts words in half. Every real vocal-chop tutorial says the same thing: don\'t chop uniformly. Listen through and isolate 3-5 golden moments — the ad-lib, the word that catches your ear — as your building blocks. The waveform in the SAMPLE section now lets you drag those 4 boundary lines by hand (Ableton calls this Manual mode); each drag snaps to the nearest zero-crossing so the cut doesn\'t click.',
     task: 'Load a vocal sample (or any sample with distinct words/hits), drag at least 2 of the 4 boundary lines to land on phrase boundaries instead of the equal-split default, then program at least 4 hits using the resliced pads.',
     hints: [
-      'A phone voice memo saying a few words works great for this — you\'ll actually hear the difference a manual slice makes.',
+      'A phone voice memo saying a few words works great for this — or hit a starter button ("or try:") in the SAMPLE section; the Choir one has clear phrase boundaries to find.',
       'Watch the waveform, not the clock — drag a line to just before a word starts, not to some equal fraction of the file.',
       'Fewer, well-chosen slices beats a hundred random chops — that\'s true whether you\'re slicing 5 pads or 50.',
     ],
@@ -311,6 +311,32 @@ const drumLessons: Lesson[] = [
       if (total < 6) return fail(`Program at least 6 hits across your tuned pads (you have ${total}).`)
       if (usedPitches.size < 3) return fail(`Your pattern only uses pads at ${usedPitches.size} distinct pitch(es) — spread hits across at least 3 (e.g. 0, +7 and +12) so the melody actually moves.`)
       return pass('Root, fifth, octave — a melody built from one sampled moment at three speeds. That\'s the trick behind every chopped-vocal hook since the MPC.')
+    },
+  },
+  {
+    id: 'chop-warp-vs-speed',
+    module: DRUMS,
+    title: 'Warp vs. Speed: Two Ways to Repitch',
+    summary:
+      'Last lesson\'s +12 pad played twice as fast — pitch and length are chained together in Speed mode, because that\'s physically what changing playback rate does. Every serious sampler ships a second option: WARP (granular) repitching, which cuts the chop into tiny grains and re-lays them at the new pitch, so a +12 chop stays the same length. Nothing is free: warp trades the chipmunk artifact for a grainy, slightly smeared texture. Producers choose per sound — Speed for the classic chopped-up character, Warp when the chop has to keep its timing. Your ears make that call, so train them: A/B the same pad both ways and listen for the two artifacts.',
+    task: 'Load a sample, tune any pad up at least 5 semitones and give it at least 2 hits, then loop playback while flipping pitch mode between Speed and Warp — hear the length change vs. the grain texture. Leave it on Warp.',
+    hints: [
+      'The pitch mode buttons appear next to the pad tune row once a sample is loaded.',
+      'In Speed mode the tuned pad ends noticeably earlier — watch the gap before the next hit. In Warp mode the gap stays put.',
+      'The Warp artifact is easiest to hear on the 1916 Shellac starter: the graininess stacks with the surface noise.',
+      'Neither mode is "better" — Speed IS the classic sampler sound, Warp is what lets a vocal chop stay on-grid. Real DAWs make you choose too (Simpler\'s Warp toggle is exactly this).',
+    ],
+    setup: () => ({ tracks: [drumTrack()], loopBars: 1, bpm: 100, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      if (!ctx.sampleLoaded) return fail('No sample loaded yet — use Load Sample (or a starter button) in the device panel\'s SAMPLE section.')
+      const meta = ctx.sampleSliceMeta
+      if (!meta) return fail('Sample loaded but no slice data yet — try reloading it.')
+      const t = track(ctx, 'drums')
+      const bigPitchLane = DRUM_LANES.find((l) => Math.abs(meta[l]?.pitch ?? 0) >= 5)
+      if (!bigPitchLane) return fail('Tune a pad up (or down) at least 5 semitones — small intervals don\'t expose the difference between the modes clearly enough.')
+      if (laneSteps(t, bigPitchLane).length < 2) return fail(`${DRUM_LABELS[bigPitchLane]} is tuned but barely plays — give it at least 2 hits so you can hear the modes against the groove.`)
+      if (ctx.samplePitchMode !== 'warp') return fail('You\'re still in Speed mode — flip to Warp after A/B-ing them (the point is to hear both, then land on Warp).')
+      return pass('Same pad, same pitch, two completely different artifacts — length-shift vs. grain-smear. Now when a DAW offers you warp modes, you know exactly what\'s being traded.')
     },
   },
   {

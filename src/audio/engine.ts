@@ -176,7 +176,11 @@ class Engine {
   private sliceBoundaries: number[] = [] // length DRUM_LANES.length + 1: [0, b1, b2, b3, duration]
   private reversedLanes = new Set<DrumLane>()
   private lanePitches: Partial<Record<DrumLane, number>> = {} // semitones, absent = 0
-  private samplePlayers: Partial<Record<DrumLane, Tone.Player>> = {}
+  // 'speed' = Tone.Player playbackRate (pitch and length together, the classic sampler chipmunk);
+  // 'warp' = Tone.GrainPlayer detune (granular: length preserved, formants roughly kept — the
+  // same idea behind Simpler/Serum's warp modes, at Tone.js quality)
+  private samplePitchMode: 'speed' | 'warp' = 'speed'
+  private samplePlayers: Partial<Record<DrumLane, Tone.Player | Tone.GrainPlayer>> = {}
   private sampleGains: Partial<Record<DrumLane, Tone.Gain>> = {}
   private sampleSlices: Partial<Record<DrumLane, SampleSlice>> = {}
   // Phase K: everything that used to connect straight to Tone.getDestination() now connects here
@@ -417,6 +421,28 @@ class Engine {
     this.loadDrumSampleFromBuffer(audioBuf, file.name)
   }
 
+  /** Starter samples: stream a public-domain recording straight from its home (Wikimedia Commons
+   * serves CORS `*`), decode, and load a [startSec, startSec+durSec) window of it. Nothing is
+   * bundled in the repo — the app stays audio-free, the PD source stays credited at its URL. */
+  async loadDrumSampleFromUrl(url: string, name: string, startSec = 0, durSec = 12) {
+    await this.ensureStarted()
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error(`fetch failed: ${resp.status}`)
+    const arrayBuf = await resp.arrayBuffer()
+    const src = await Tone.getContext().rawContext.decodeAudioData(arrayBuf)
+    const s0 = Math.max(0, Math.min(src.length - 1, Math.floor(startSec * src.sampleRate)))
+    const s1 = Math.min(src.length, Math.floor((startSec + durSec) * src.sampleRate))
+    const len = Math.max(1, s1 - s0)
+    const ctx = Tone.getContext().rawContext
+    const windowed = ctx.createBuffer(src.numberOfChannels, len, src.sampleRate)
+    for (let ch = 0; ch < src.numberOfChannels; ch++) {
+      const data = new Float32Array(len)
+      src.copyFromChannel(data, ch, s0)
+      windowed.copyToChannel(data, ch)
+    }
+    this.loadDrumSampleFromBuffer(windowed, name)
+  }
+
   clearDrumSample() {
     for (const lane of DRUM_LANES) {
       this.samplePlayers[lane]?.dispose()
@@ -429,7 +455,8 @@ class Engine {
     this.sliceBoundaries = []
     this.reversedLanes.clear()
     this.lanePitches = {}
-    useStore.setState({ sampleLoaded: null, sampleSliceMeta: null })
+    this.samplePitchMode = 'speed'
+    useStore.setState({ sampleLoaded: null, sampleSliceMeta: null, samplePitchMode: 'speed' })
   }
 
   /** Copy [startSec, startSec+durSec) of the loaded sample into its own small buffer, optionally
@@ -490,9 +517,16 @@ class Engine {
       const pitch = this.lanePitches[lane] ?? 0
       const region = this.extractSlice(start, dur, reversed)
       const gain = new Tone.Gain(1).connect(this.getDrumBus().filter)
-      const player = new Tone.Player(new Tone.ToneAudioBuffer(region)).connect(gain)
-      // classic sampler repitch: playback rate 2^(semi/12) — pitch and duration move together
-      player.playbackRate = Math.pow(2, pitch / 12)
+      let player: Tone.Player | Tone.GrainPlayer
+      if (this.samplePitchMode === 'warp') {
+        // granular repitch: detune in cents, duration unchanged — hear the grain texture
+        player = new Tone.GrainPlayer(new Tone.ToneAudioBuffer(region)).connect(gain)
+        player.detune = pitch * 100
+      } else {
+        // classic sampler repitch: playback rate 2^(semi/12) — pitch and duration move together
+        player = new Tone.Player(new Tone.ToneAudioBuffer(region)).connect(gain)
+        player.playbackRate = Math.pow(2, pitch / 12)
+      }
       this.samplePlayers[lane] = player
       this.sampleGains[lane] = gain
       this.sampleSlices[lane] = { start, dur, reversed, pitch }
@@ -525,15 +559,23 @@ class Engine {
     if (!this.sampleFullBuffer) return
     const clamped = Math.max(-12, Math.min(12, Math.round(semitones)))
     this.lanePitches[lane] = clamped
-    // playbackRate is settable live on the existing player — no buffer rebuild needed, so this is
+    // pitch is settable live on the existing player — no buffer rebuild needed, so this is
     // the one slice edit that doesn't go through rebuildSlicePlayers' dispose-and-recreate path.
     const player = this.samplePlayers[lane]
-    if (player) player.playbackRate = Math.pow(2, clamped / 12)
+    if (player instanceof Tone.GrainPlayer) player.detune = clamped * 100
+    else if (player) player.playbackRate = Math.pow(2, clamped / 12)
     if (this.sampleSlices[lane]) this.sampleSlices[lane]!.pitch = clamped
     const meta = useStore.getState().sampleSliceMeta
     if (meta?.[lane]) {
       useStore.setState({ sampleSliceMeta: { ...meta, [lane]: { ...meta[lane]!, pitch: clamped } } })
     }
+  }
+
+  setSamplePitchMode(mode: 'speed' | 'warp') {
+    if (!this.sampleFullBuffer || mode === this.samplePitchMode) return
+    this.samplePitchMode = mode
+    this.rebuildSlicePlayers()
+    useStore.setState({ samplePitchMode: mode })
   }
 
   getSliceBoundaries(): number[] {

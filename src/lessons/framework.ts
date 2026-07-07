@@ -283,9 +283,11 @@ export interface ValidateCtx {
   /** Phase I: global engine/UI state (not per-track content), passed through so a lesson can
    * check whether the student has loaded a sample — see the sampling lesson in rhythm.ts. */
   sampleLoaded?: { name: string } | null
-  /** Manual slicing: each lane's current {start, dur, reversed} within the loaded sample, so a
-   * lesson can grade e.g. "moved a boundary off the equal-split default" or "reversed a pad". */
+  /** Manual slicing: each lane's current {start, dur, reversed, pitch} within the loaded sample,
+   * so a lesson can grade e.g. "moved a boundary off the equal-split default" or "reversed a pad". */
   sampleSliceMeta?: Partial<Record<DrumLane, SampleSlice>> | null
+  /** 'speed' (playback-rate) vs 'warp' (granular) — how pad pitch is applied to the loaded sample. */
+  samplePitchMode?: 'speed' | 'warp'
   /** Track Lab: the imported-song analysis + the student's structure map, passed through the
    * same way sampleLoaded is so the Track Deconstruction lessons can grade it. */
   trackLab?: TrackLabState | null

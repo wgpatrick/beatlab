@@ -96,6 +96,9 @@ export interface AppState {
    * directly by Engine whenever a boundary moves or a lane's reverse is toggled — drives the
    * slice-editor waveform view and lets lessons grade "did you move a boundary / reverse a pad". */
   sampleSliceMeta: Partial<Record<DrumLane, SampleSlice>> | null
+  /** How pad pitch is applied: 'speed' = playback-rate (classic chipmunk), 'warp' = granular
+   * (length preserved). Set by Engine alongside sampleSliceMeta. */
+  samplePitchMode: 'speed' | 'warp'
   /** Phase K: master bus loudness in dBFS (via Tone.Meter), set directly by Engine once per step
    * during playback — an approximate/instantaneous reading, not true integrated LUFS. */
   masterLevel: number | null
@@ -150,6 +153,8 @@ export interface AppState {
   setSampleSliceBoundary: (index: number, timeSec: number) => void
   toggleSampleSliceReverse: (lane: DrumLane) => void
   setSampleSlicePitch: (lane: DrumLane, semitones: number) => void
+  setSamplePitchMode: (mode: 'speed' | 'warp') => void
+  loadStarterSample: (url: string, name: string, startSec: number, durSec: number) => Promise<void>
   setComputerKeyboardEnabled: (on: boolean) => void
   setScaleLock: (lock: { root: number; scale: string } | null) => void
   connectMidi: () => Promise<void>
@@ -207,6 +212,7 @@ export const useStore = create<AppState>()((set, get) => ({
   automationArm: null,
   sampleLoaded: null,
   sampleSliceMeta: null,
+  samplePitchMode: 'speed',
   masterLevel: null,
   computerKeyboardEnabled: false,
   trackLab: emptyTrackLab(),
@@ -402,6 +408,7 @@ export const useStore = create<AppState>()((set, get) => ({
       params: state.lessonParams,
       sampleLoaded: state.sampleLoaded,
       sampleSliceMeta: state.sampleSliceMeta,
+      samplePitchMode: state.samplePitchMode,
       trackLab: state.trackLab,
     })
     let completed = state.completed
@@ -671,6 +678,12 @@ export const useStore = create<AppState>()((set, get) => ({
   toggleSampleSliceReverse: (lane) => engine.toggleSliceReverse(lane),
 
   setSampleSlicePitch: (lane, semitones) => engine.setSlicePitch(lane, semitones),
+
+  setSamplePitchMode: (mode) => engine.setSamplePitchMode(mode),
+
+  loadStarterSample: async (url, name, startSec, durSec) => {
+    await engine.loadDrumSampleFromUrl(url, name, startSec, durSec)
+  },
 
   // ---------- Musical typing (computer keyboard as a MIDI stand-in) ----------
 
