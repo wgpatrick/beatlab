@@ -1627,6 +1627,34 @@ button.seq-label:hover {
   border-color: currentColor;
   font-weight: 700;
 }
+.sample-slice-pitch {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.tune-step {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  line-height: 1;
+  background: var(--panel3);
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  color: var(--text);
+  font-size: 10px;
+}
+.tune-step:hover {
+  background: var(--accent);
+  color: #221600;
+}
+.tune-value {
+  min-width: 22px;
+  text-align: center;
+  font-size: 9px;
+  color: var(--text-dim, #888);
+}
 
 /* ---------- Wave 3: drawable LFO shape editor ---------- */
 .lfo-step-editor {

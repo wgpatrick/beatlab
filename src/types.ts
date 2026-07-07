@@ -359,3 +359,38 @@ export const DEFAULT_SYNTH: SynthParams = {
   openHatDecay: 0.35,
   hatTone: 4000,
 }
+
+/** The drum voice params a kit preset bundles — the subset of SynthParams the KICK/SNARE/HI-HAT
+ * device sections expose. */
+export type DrumVoiceParams = Pick<
+  SynthParams,
+  'kickTune' | 'kickPunch' | 'kickDecay' | 'snareTone' | 'snareDecay' | 'hatDecay' | 'openHatDecay' | 'hatTone'
+>
+
+/** Character presets for the synthesized kit, modeled on the machines that defined whole genres
+ * (see the Drum Machine Museum lesson): the 808's loose boomy analog kick (hip-hop/trap), the
+ * 909's tight punchy snap (house/techno), and a LinnDrum-style fatter, darker "sampled" feel
+ * (80s pop). 'init' is DEFAULT_SYNTH's values — the kit BeatLab has always shipped. These are
+ * honest characters built from this engine's own voices, not recreations of the real circuits. */
+export const DRUM_KIT_PRESETS: Record<'init' | 'tr808' | 'tr909' | 'linn', { label: string; blurb: string; params: DrumVoiceParams }> = {
+  init: {
+    label: 'Init',
+    blurb: "BeatLab's stock 909-style kit — the sound every drum lesson so far used",
+    params: { kickTune: 32.7, kickPunch: 0.05, kickDecay: 0.4, snareTone: 0, snareDecay: 0.13, hatDecay: 0.05, openHatDecay: 0.35, hatTone: 4000 },
+  },
+  tr808: {
+    label: '808',
+    blurb: 'Loose, boomy, all-analog — the sound of hip-hop and trap. Slow pitch glide, long ringing kick, snappy paper-thin snare',
+    params: { kickTune: 38, kickPunch: 0.18, kickDecay: 0.9, snareTone: 0.35, snareDecay: 0.18, hatDecay: 0.03, openHatDecay: 0.5, hatTone: 6500 },
+  },
+  tr909: {
+    label: '909',
+    blurb: 'Tight, punchy, aggressive — the backbone of house and techno. Fast pitch snap, short kick, crisp bright hats',
+    params: { kickTune: 48, kickPunch: 0.02, kickDecay: 0.28, snareTone: 0.45, snareDecay: 0.15, hatDecay: 0.06, openHatDecay: 0.3, hatTone: 8000 },
+  },
+  linn: {
+    label: 'Linn',
+    blurb: 'Fat, dark, "sampled"-feeling — the LinnDrum defined 80s pop and new wave. Weighty snare with real body, mellow hats',
+    params: { kickTune: 42, kickPunch: 0.04, kickDecay: 0.35, snareTone: 0.65, snareDecay: 0.22, hatDecay: 0.09, openHatDecay: 0.45, hatTone: 3000 },
+  },
+}

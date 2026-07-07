@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { DRUM_LABELS, DRUM_LANES, type DrumLane, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SyncDivision, type SynthParams, type Track, type WtTable } from '../types'
+import { DRUM_KIT_PRESETS, DRUM_LABELS, DRUM_LANES, type DrumLane, type DrumVoiceParams, type FilterType, type InsertKind, type Lfo2Dest, type LfoDest, type OscType, type SyncDivision, type SynthParams, type Track, type WtTable } from '../types'
 import { engine, type SampleSlice } from '../audio/engine'
 import { useStore } from '../state/store'
 import { Knob } from './Knob'
@@ -218,6 +218,7 @@ function SampleSliceEditor({
   sliceMeta,
   onDragBoundary,
   onToggleReverse,
+  onSetPitch,
 }: {
   peaks: number[]
   duration: number
@@ -225,6 +226,7 @@ function SampleSliceEditor({
   sliceMeta: Partial<Record<DrumLane, SampleSlice>>
   onDragBoundary: (index: number, timeSec: number) => void
   onToggleReverse: (lane: DrumLane) => void
+  onSetPitch: (lane: DrumLane, semitones: number) => void
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const dragIndex = useRef<number | null>(null)
@@ -315,6 +317,28 @@ function SampleSliceEditor({
           </button>
         ))}
       </div>
+      <div className="sample-slice-labels">
+        {DRUM_LANES.map((lane) => {
+          const pitch = sliceMeta[lane]?.pitch ?? 0
+          return (
+            <div key={lane} className="sample-slice-pitch">
+              <button className="tune-step" onClick={() => onSetPitch(lane, pitch - 1)} title={`Tune ${DRUM_LABELS[lane]} down a semitone (classic sampler repitch — slower and deeper together)`}>
+                −
+              </button>
+              <span
+                className="tune-value"
+                style={pitch !== 0 ? { color: SAMPLE_LANE_COLORS[lane] } : undefined}
+                title={`${DRUM_LABELS[lane]} pitch in semitones — 0 = as recorded. Repitching also changes the slice's length and character (the "chipmunk" effect every hardware sampler has)`}
+              >
+                {pitch > 0 ? `+${pitch}` : pitch}
+              </span>
+              <button className="tune-step" onClick={() => onSetPitch(lane, pitch + 1)} title={`Tune ${DRUM_LABELS[lane]} up a semitone (classic sampler repitch — faster and higher together)`}>
+                +
+              </button>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -345,6 +369,7 @@ export function DevicePanel({ track }: { track: Track }) {
   const loadDrumSample = useStore((s) => s.loadDrumSample)
   const clearDrumSample = useStore((s) => s.clearDrumSample)
   const setSampleSliceBoundary = useStore((s) => s.setSampleSliceBoundary)
+  const setSampleSlicePitch = useStore((s) => s.setSampleSlicePitch)
   const toggleSampleSliceReverse = useStore((s) => s.toggleSampleSliceReverse)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const samplePeaks = useMemo(() => (sampleLoaded ? engine.getSampleWaveformPeaks(300) : []), [sampleLoaded])
@@ -354,8 +379,9 @@ export function DevicePanel({ track }: { track: Track }) {
   // Drum tracks never had a filter/EQ/comp/distortion/sends UI before this — so unlike synth
   // tracks (where undefined visibleParams has always meant "show everything," a convention many
   // existing lessons rely on), a drum-kind lesson must opt in explicitly, or every pre-existing
-  // drum-pattern lesson would suddenly sprout 7 new sections nobody asked it to teach.
-  const visible = (key: keyof SynthParams) => (isDrums ? !!visibleParams && visibleParams.includes(key) : !visibleParams || visibleParams.includes(key))
+  // drum-pattern lesson would suddenly sprout 7 new sections nobody asked it to teach. Outside a
+  // lesson entirely (the Sandbox), everything shows for drums too — same as synth tracks.
+  const visible = (key: keyof SynthParams) => (isDrums && lesson ? !!visibleParams && visibleParams.includes(key) : !visibleParams || visibleParams.includes(key))
   const statusOf = (key: keyof SynthParams): ParamStatus | undefined => paramScores?.[key]
 
   const p = track.synth
@@ -441,6 +467,7 @@ export function DevicePanel({ track }: { track: Track }) {
                     sliceMeta={sampleSliceMeta}
                     onDragBoundary={(i, t) => setSampleSliceBoundary(i, t)}
                     onToggleReverse={(lane) => toggleSampleSliceReverse(lane)}
+                    onSetPitch={(lane, semi) => setSampleSlicePitch(lane, semi)}
                   />
                 )
               })()
@@ -463,6 +490,23 @@ export function DevicePanel({ track }: { track: Track }) {
             affect the synthesized voices — once a sample is loaded, its slices replace them
             lane-for-lane and these knobs go quiet.
           </div>
+          {(visible('kickTune') || visible('snareTone') || visible('hatDecay')) && (
+            <Section title="KIT" hint="Character presets for the synthesized kit — each one is just a bundle of the KICK/SNARE/HI-HAT knob settings below, modeled on the machines that defined whole genres">
+              <div className="wave-btns" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                {(Object.keys(DRUM_KIT_PRESETS) as (keyof typeof DRUM_KIT_PRESETS)[]).map((key) => {
+                  const preset = DRUM_KIT_PRESETS[key]
+                  const active = (Object.keys(preset.params) as (keyof DrumVoiceParams)[]).every(
+                    (k) => Math.abs(p[k] - preset.params[k]) < preset.params[k] * 0.02 + 0.001,
+                  )
+                  return (
+                    <button key={key} className={`wave ${active ? 'on' : ''}`} onClick={() => set({ ...preset.params })} title={preset.blurb}>
+                      {preset.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </Section>
+          )}
           {(visible('kickTune') || visible('kickPunch') || visible('kickDecay')) && (
             <Section title="KICK" hint="The synthesized kick's own sound — a sine pitch-swept down over the hit, the same recipe every kick-synthesis tutorial teaches">
               <div className="knob-row">

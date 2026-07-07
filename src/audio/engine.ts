@@ -148,6 +148,9 @@ export interface SampleSlice {
   start: number
   dur: number
   reversed: boolean
+  /** semitones, -12..+12 — classic sampler playback-rate repitch (pitch and length change
+   * together, formants shift: the honest "chipmunk effect" every hardware sampler has) */
+  pitch: number
 }
 
 class Engine {
@@ -172,6 +175,7 @@ class Engine {
   private sampleFullBuffer: AudioBuffer | null = null
   private sliceBoundaries: number[] = [] // length DRUM_LANES.length + 1: [0, b1, b2, b3, duration]
   private reversedLanes = new Set<DrumLane>()
+  private lanePitches: Partial<Record<DrumLane, number>> = {} // semitones, absent = 0
   private samplePlayers: Partial<Record<DrumLane, Tone.Player>> = {}
   private sampleGains: Partial<Record<DrumLane, Tone.Gain>> = {}
   private sampleSlices: Partial<Record<DrumLane, SampleSlice>> = {}
@@ -424,6 +428,7 @@ class Engine {
     this.sampleFullBuffer = null
     this.sliceBoundaries = []
     this.reversedLanes.clear()
+    this.lanePitches = {}
     useStore.setState({ sampleLoaded: null, sampleSliceMeta: null })
   }
 
@@ -482,13 +487,16 @@ class Engine {
       const start = this.sliceBoundaries[i]
       const dur = Math.max(0.01, this.sliceBoundaries[i + 1] - start)
       const reversed = this.reversedLanes.has(lane)
+      const pitch = this.lanePitches[lane] ?? 0
       const region = this.extractSlice(start, dur, reversed)
       const gain = new Tone.Gain(1).connect(this.getDrumBus().filter)
       const player = new Tone.Player(new Tone.ToneAudioBuffer(region)).connect(gain)
+      // classic sampler repitch: playback rate 2^(semi/12) — pitch and duration move together
+      player.playbackRate = Math.pow(2, pitch / 12)
       this.samplePlayers[lane] = player
       this.sampleGains[lane] = gain
-      this.sampleSlices[lane] = { start, dur, reversed }
-      meta[lane] = { start, dur, reversed }
+      this.sampleSlices[lane] = { start, dur, reversed, pitch }
+      meta[lane] = { start, dur, reversed, pitch }
     })
     useStore.setState({ sampleSliceMeta: meta })
   }
@@ -511,6 +519,21 @@ class Engine {
     if (this.reversedLanes.has(lane)) this.reversedLanes.delete(lane)
     else this.reversedLanes.add(lane)
     this.rebuildSlicePlayers()
+  }
+
+  setSlicePitch(lane: DrumLane, semitones: number) {
+    if (!this.sampleFullBuffer) return
+    const clamped = Math.max(-12, Math.min(12, Math.round(semitones)))
+    this.lanePitches[lane] = clamped
+    // playbackRate is settable live on the existing player — no buffer rebuild needed, so this is
+    // the one slice edit that doesn't go through rebuildSlicePlayers' dispose-and-recreate path.
+    const player = this.samplePlayers[lane]
+    if (player) player.playbackRate = Math.pow(2, clamped / 12)
+    if (this.sampleSlices[lane]) this.sampleSlices[lane]!.pitch = clamped
+    const meta = useStore.getState().sampleSliceMeta
+    if (meta?.[lane]) {
+      useStore.setState({ sampleSliceMeta: { ...meta, [lane]: { ...meta[lane]!, pitch: clamped } } })
+    }
   }
 
   getSliceBoundaries(): number[] {

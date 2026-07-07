@@ -1,4 +1,4 @@
-import { DRUM_LABELS, DRUM_LANES, type DrumLane } from '../types'
+import { DRUM_KIT_PRESETS, DRUM_LABELS, DRUM_LANES, type DrumLane, type DrumVoiceParams } from '../types'
 import type { SampleSlice } from '../audio/engine'
 import {
   drumTrack,
@@ -285,6 +285,35 @@ const drumLessons: Lesson[] = [
     },
   },
   {
+    id: 'chop-pitch-melody',
+    module: DRUMS,
+    title: 'Pitch a Chop into a Melody',
+    summary:
+      'The last vocal-chop technique, and the one behind every chopped-vocal hook you\'ve heard on the radio: repitching. Each pad now has −/+ tune buttons (in semitones) under the waveform — classic sampler repitch, meaning pitch and speed change together, so a chop tuned up also gets shorter and brighter (the "chipmunk" effect every hardware sampler has; producers use formant-preserving algorithms when they want to avoid it, but the raw version IS the classic sound). Tune copies of one vocal moment to different scale degrees and a texture becomes an instrument.',
+    task: 'Load a sample, tune one pad up 7 semitones (a perfect fifth) and another up 12 (an octave), then program at least 6 hits across at least 3 differently-pitched pads (0, +7 and +12 make a root-fifth-octave melody).',
+    hints: [
+      'The −/+ buttons live under each pad\'s label in the SAMPLE section, one row per pad.',
+      '+7 semitones is a perfect fifth, +12 is an octave — the same intervals from the Theory module, applied to a sample instead of a synth note.',
+      'Drag the slice boundaries so two pads hold the same vocal moment — then their only difference is pitch, and it really sounds like a melody.',
+      'Notice the +12 pad plays twice as fast as the original — that\'s playback-rate repitch being honest with you.',
+    ],
+    setup: () => ({ tracks: [drumTrack()], loopBars: 1, bpm: 100, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      if (!ctx.sampleLoaded) return fail('No sample loaded yet — use Load Sample in the device panel\'s SAMPLE section.')
+      const meta = ctx.sampleSliceMeta
+      if (!meta) return fail('Sample loaded but no slice data yet — try reloading it.')
+      const pitches = DRUM_LANES.map((l) => meta[l]?.pitch ?? 0)
+      if (!pitches.includes(7)) return fail('No pad is tuned to +7 yet — that\'s the perfect fifth, the melody\'s middle voice.')
+      if (!pitches.includes(12)) return fail('No pad is tuned to +12 yet — the octave, the melody\'s top voice.')
+      const t = track(ctx, 'drums')
+      const usedPitches = new Set(DRUM_LANES.filter((l) => laneSteps(t, l).length > 0).map((l) => meta[l]?.pitch ?? 0))
+      const total = DRUM_LANES.reduce((acc, l) => acc + laneSteps(t, l).length, 0)
+      if (total < 6) return fail(`Program at least 6 hits across your tuned pads (you have ${total}).`)
+      if (usedPitches.size < 3) return fail(`Your pattern only uses pads at ${usedPitches.size} distinct pitch(es) — spread hits across at least 3 (e.g. 0, +7 and +12) so the melody actually moves.`)
+      return pass('Root, fifth, octave — a melody built from one sampled moment at three speeds. That\'s the trick behind every chopped-vocal hook since the MPC.')
+    },
+  },
+  {
     id: 'kick-tune-to-key',
     module: DRUMS,
     title: 'Tune the Kick to the Key',
@@ -372,6 +401,36 @@ const drumLessons: Lesson[] = [
       if (laneSteps(t, 'hat').length < 4) return fail('Program at least 4 closed-hat hits.')
       if (laneSteps(t, 'openhat').length < 2) return fail('Program at least 2 open-hat hits.')
       return pass('Two clearly different feels from one voice, just by stretching the decay gap — that\'s the entire closed/open hi-hat distinction.')
+    },
+  },
+  {
+    id: 'drum-machine-museum',
+    module: DRUMS,
+    title: 'The Drum Machine Museum',
+    summary:
+      'Three machines defined how drums sound in whole genres. The Roland TR-808 (1980, all-analog): loose, boomy, a kick that glides and rings — hip-hop and trap are built on it. The TR-909 (1983): tight, punchy, crisp bright hats — the backbone of house and techno. The LinnDrum (1982, first sampler): fat, dark, weighty snares — the glossy fingerprint of 80s pop. The KIT section\'s presets are those characters, each just a bundle of the KICK/SNARE/HI-HAT knobs — click through them while this house pattern loops and hear one beat wear three different genres.',
+    task: 'Press play, audition all four kit presets on this pattern, then leave it on the 909 — the machine house was built on.',
+    hints: [
+      'KIT section — one click per machine. Watch the KICK/SNARE/HI-HAT knobs jump as you switch: presets are just knob positions.',
+      'Listen for the kick most: the 808 booms past the next hit, the 909 gets out of the way. At 124 BPM, that\'s the difference between mud and drive.',
+      'The pattern never changes — every difference you hear is sound design, not rhythm.',
+    ],
+    visibleParams: ['kickTune', 'kickPunch', 'kickDecay', 'snareTone', 'snareDecay', 'hatDecay', 'openHatDecay', 'hatTone'],
+    setup: () => ({
+      tracks: [drumTrack({ kick: [0, 4, 8, 12], clap: [4, 12], hat: [2, 6, 10, 14], openhat: [14] })],
+      loopBars: 1,
+      bpm: 124,
+      selectedTrackId: 'drums',
+    }),
+    validate: (ctx) => {
+      const p = track(ctx, 'drums').synth
+      const matches = (params: DrumVoiceParams) =>
+        (Object.keys(params) as (keyof DrumVoiceParams)[]).every((k) => Math.abs(p[k] - params[k]) < params[k] * 0.02 + 0.001)
+      if (matches(DRUM_KIT_PRESETS.tr909.params))
+        return pass('That\'s the 909 — the kit house and techno run on. You just heard the same bar wear four different genres; that\'s what "the sound of a machine" means.')
+      const current = (Object.keys(DRUM_KIT_PRESETS) as (keyof typeof DRUM_KIT_PRESETS)[]).find((k) => matches(DRUM_KIT_PRESETS[k].params))
+      if (current) return fail(`You\'re on the ${DRUM_KIT_PRESETS[current].label} kit — audition them all, but leave it on the 909 for this four-on-the-floor pattern.`)
+      return fail('The knobs are between presets — click 909 in the KIT section (hand-dialing its exact character also works, but the button is faster).')
     },
   },
 ]

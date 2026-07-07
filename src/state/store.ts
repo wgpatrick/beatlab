@@ -149,6 +149,7 @@ export interface AppState {
   clearDrumSample: () => void
   setSampleSliceBoundary: (index: number, timeSec: number) => void
   toggleSampleSliceReverse: (lane: DrumLane) => void
+  setSampleSlicePitch: (lane: DrumLane, semitones: number) => void
   setComputerKeyboardEnabled: (on: boolean) => void
   setScaleLock: (lock: { root: number; scale: string } | null) => void
   connectMidi: () => Promise<void>
@@ -668,6 +669,8 @@ export const useStore = create<AppState>()((set, get) => ({
   setSampleSliceBoundary: (index, timeSec) => engine.setSliceBoundary(index, timeSec),
 
   toggleSampleSliceReverse: (lane) => engine.toggleSliceReverse(lane),
+
+  setSampleSlicePitch: (lane, semitones) => engine.setSlicePitch(lane, semitones),
 
   // ---------- Musical typing (computer keyboard as a MIDI stand-in) ----------
 
