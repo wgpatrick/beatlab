@@ -260,6 +260,120 @@ const drumLessons: Lesson[] = [
       return pass('That\'s a chopped-vocal hook: several slices, syncopated, working as one rhythm — the same idea behind every vocal-chop hit you\'ve ever heard.')
     },
   },
+  {
+    id: 'sample-filter-sweep',
+    module: DRUMS,
+    title: 'Filter Sweep on a Chop',
+    summary:
+      'Every vocal-chop and sample-flipping guide names this as the single most-used effect: an LFO sweeping the filter cutoff open and closed, plus a reverb send so the dry chop sits in a space instead of sounding pasted on top. Your loaded sample and the synthesized kit both run through one shared FILTER → EQ/COMP/DIST → SEND chain now — the exact same signal path synth tracks already have, just aimed at the whole drum rack instead of one voice.',
+    task: 'Load a sample, set LFO destination to Cutoff with Depth above 50% (any rate/sync), and set Reverb send above 20%.',
+    hints: [
+      'LFO section, first row of buttons — click Cutoff.',
+      'Turn LFO Depth up past halfway so the sweep is obvious, not subtle.',
+      'SEND section, Reverb knob — even a modest send stops a chop from sounding dry and pasted-in.',
+      'Try syncing the LFO to the tempo (Sync button) so the sweep locks to the groove instead of drifting.',
+    ],
+    visibleParams: ['cutoff', 'resonance', 'filterType', 'sendReverb', 'sendDelay', 'lfoDest', 'lfoDepth', 'lfoRate', 'lfoSync', 'lfoSyncRate'],
+    setup: () => ({ tracks: [drumTrack()], loopBars: 1, bpm: 100, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      if (!ctx.sampleLoaded) return fail('No sample loaded yet — use Load Sample in the device panel\'s SAMPLE section.')
+      const p = track(ctx, 'drums').synth
+      if (p.lfoDest !== 'cutoff') return fail('Set the LFO destination to Cutoff — that\'s what makes it a filter sweep instead of a static filter.')
+      if (p.lfoDepth <= 0.5) return fail(`LFO Depth at ${Math.round(p.lfoDepth * 100)}% is too subtle — push it past 50% so the sweep is unmistakable.`)
+      if (p.sendReverb <= 0.2) return fail(`Reverb send at ${Math.round(p.sendReverb * 100)}% — push it past 20% so the chop sits in a space instead of sounding dry and pasted-in.`)
+      return pass('A moving filter plus a reverb send — the two effects that show up in nearly every sample-chopping tutorial, and now every pad on this kit runs through them together.')
+    },
+  },
+  {
+    id: 'kick-tune-to-key',
+    module: DRUMS,
+    title: 'Tune the Kick to the Key',
+    summary:
+      'A kick drum is a sine wave with a pitch envelope — and that base pitch is tunable, just like any other note. Matching it to the song\'s key/bassline (instead of leaving it at whatever a drum machine happened to ship with) is one of the most common kick sound-design moves there is — it\'s the difference between a kick that fights the bass and one that locks in with it.',
+    task: 'This track is in E — tune the KICK section\'s Tune knob to roughly E1 (~41Hz).',
+    hints: [
+      'The KICK section is new — it only affects the synthesized kick, not a loaded sample.',
+      'Turn Tune down toward the low end of its range; E1 sits a bit above the knob\'s minimum.',
+      'Within a few Hz is fine — this is about the ballpark, not perfect pitch.',
+    ],
+    visibleParams: ['kickTune'],
+    setup: () => ({ tracks: [drumTrack({ kick: [0, 4, 8, 12] })], loopBars: 1, bpm: 100, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      const p = track(ctx, 'drums').synth
+      const target = 41.2 // E1
+      const ratio = p.kickTune / target
+      if (ratio < 1 / 1.15 || ratio > 1.15) {
+        return fail(`Kick is tuned to ~${Math.round(p.kickTune)}Hz — aim for around ${Math.round(target)}Hz (E1) to match the bassline.`)
+      }
+      return pass(`Tuned to ~${Math.round(p.kickTune)}Hz — locked to the key instead of fighting it. Real producers do this note-for-note against the actual bassline.`)
+    },
+  },
+  {
+    id: 'kick-808-vs-909',
+    module: DRUMS,
+    title: '808 vs 909: Kick Character',
+    summary:
+      'The two most influential drum machines ever built make almost opposite kicks from the same basic recipe. The 808 (all-analog, no samples) is famous for a long, loose, boomy sub kick — slow pitch glide, long decay — that defined hip-hop and trap. The 909 (introduced a few years later) is punchier and tighter — a fast pitch snap and a short decay — and became the backbone of house and techno. Same two knobs, opposite settings.',
+    task: 'Dial in an 808-style kick: Punch above 150ms AND Decay above 700ms.',
+    hints: [
+      'Punch is the pitch envelope\'s speed — slow (high ms) is the 808\'s loose glide.',
+      'Decay is how long the kick rings out — the 808 lets it boom.',
+      'For comparison, a 909 would be the opposite: Punch under 30ms, Decay under 200ms — quick and tight.',
+    ],
+    visibleParams: ['kickPunch', 'kickDecay'],
+    setup: () => ({ tracks: [drumTrack({ kick: [0, 4, 8, 12] })], loopBars: 1, bpm: 90, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      const p = track(ctx, 'drums').synth
+      if (p.kickPunch < 0.15) return fail(`Punch at ${Math.round(p.kickPunch * 1000)}ms is too fast/tight — push it past 150ms for that loose 808 glide.`)
+      if (p.kickDecay < 0.7) return fail(`Decay at ${Math.round(p.kickDecay * 1000)}ms is too short — push it past 700ms so the kick booms instead of cutting off.`)
+      return pass('That\'s the 808 character — a loose, boomy kick built from nothing but a slow pitch glide and a long decay. Two knobs, one of the most recognizable sounds in music.')
+    },
+  },
+  {
+    id: 'snare-body-vs-noise',
+    module: DRUMS,
+    title: 'Snare: Body vs. Noise',
+    summary:
+      'Every drum-machine snare is secretly two sounds at once: a tonal "shell" (a low, pitched thump, like a real drum\'s wooden body resonating) and filtered noise (the metal wires buzzing underneath). A pure-noise snare sounds thin and cheap; blending in some shell tone gives it weight and a sense of pitch without losing the snap.',
+    task: 'Blend in some snare body: set Tone above 50%, and Decay between 150ms and 400ms.',
+    hints: [
+      'Tone at 0% is pure noise (today\'s default) — turn it up past halfway to hear the shell layer join in.',
+      'Too little decay and the body barely sounds; the range asked for here gives it room to speak.',
+      'Try soloing the snare (Clear the other lanes\' hits temporarily) to hear the blend clearly.',
+    ],
+    visibleParams: ['snareTone', 'snareDecay'],
+    setup: () => ({ tracks: [drumTrack({ snare: [4, 12] })], loopBars: 1, bpm: 96, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      const p = track(ctx, 'drums').synth
+      if (p.snareTone <= 0.5) return fail(`Tone at ${Math.round(p.snareTone * 100)}% — push it past 50% so the shell layer is really audible under the noise.`)
+      if (p.snareDecay < 0.15 || p.snareDecay > 0.4) return fail(`Decay at ${Math.round(p.snareDecay * 1000)}ms — aim for 150-400ms so the body has room to ring without turning into a full drum hit.`)
+      return pass('That\'s a snare with real body — tone and noise working together instead of just noise alone. The same two-layer trick every drum machine\'s snare is built from.')
+    },
+  },
+  {
+    id: 'hat-open-closed-decay',
+    module: DRUMS,
+    title: 'Hi-Hat Decay: Closed vs. Open Feel',
+    summary:
+      'Closed and open hi-hats are the same metallic voice — the entire difference is how long they\'re allowed to ring. A closed hat is clipped almost instantly (like a drummer\'s foot pressing the pedal shut); an open hat rings out. Exaggerating that contrast — very short closed, noticeably long open — is what makes a hi-hat pattern feel like two distinct instruments instead of one repeated sound.',
+    task: 'Set the closed hat\'s decay under 30ms and the open hat\'s decay over 600ms, then program at least 4 closed hits and 2 open hits.',
+    hints: [
+      'HI-HAT section: Closed knob down near its minimum, Open knob up past halfway.',
+      'The bigger the gap between the two, the more the open hat feels like a deliberate "lift" against the closed pattern.',
+      'Program the pattern the same way as any other lane — click steps in the Closed Hat and Open Hat rows.',
+    ],
+    visibleParams: ['hatDecay', 'openHatDecay'],
+    setup: () => ({ tracks: [drumTrack({ kick: [0, 4, 8, 12] })], loopBars: 1, bpm: 124, selectedTrackId: 'drums' }),
+    validate: (ctx) => {
+      const p = track(ctx, 'drums').synth
+      if (p.hatDecay >= 0.03) return fail(`Closed hat decay at ${Math.round(p.hatDecay * 1000)}ms is too long — bring it under 30ms for a tight, clipped tick.`)
+      if (p.openHatDecay <= 0.6) return fail(`Open hat decay at ${Math.round(p.openHatDecay * 1000)}ms is too short — push it past 600ms so it really rings out.`)
+      const t = track(ctx, 'drums')
+      if (laneSteps(t, 'hat').length < 4) return fail('Program at least 4 closed-hat hits.')
+      if (laneSteps(t, 'openhat').length < 2) return fail('Program at least 2 open-hat hits.')
+      return pass('Two clearly different feels from one voice, just by stretching the decay gap — that\'s the entire closed/open hi-hat distinction.')
+    },
+  },
 ]
 
 // ================= MODULE 7: RHYTHM STYLES =================

@@ -96,9 +96,42 @@ interface SynthChain {
   lastInsertOrder: InsertKind[]
 }
 
+// Shared shape of "filter -> reorderable inserts -> panner" — wireInserts only ever touches
+// these fields, so it works unchanged for both a synth voice's SynthChain and the drum bus below.
+interface InsertNodes {
+  filter: Tone.Filter
+  eq3: Tone.EQ3
+  compIn: Tone.Gain
+  compOut: Tone.Gain
+  distortion: Tone.Distortion
+  bitcrush: Tone.BitCrusher
+  panner: Tone.ToneAudioNode
+  lastInsertOrder: InsertKind[]
+}
+
+// Sampling techniques research (filter sweeps, reverb/delay sends — the two most-cited chop
+// effects in production tutorials) needs the drum/sample lanes routed through the same
+// filter/EQ/comp/distortion/sends chain synth tracks already have. Every Track already carries an
+// otherwise-unused `synth: SynthParams` even when kind === 'drums' — this bus is what finally
+// gives those values somewhere to go. One shared bus, not one per drum track, matching the
+// existing single global drum kit / sample-slice set (see triggerDrum).
+interface DrumBus extends InsertNodes {
+  panner: Tone.Panner
+  vol: Tone.Volume
+  reverbSend: Tone.Gain
+  delaySend: Tone.Gain
+  modSend: Tone.Gain
+  compDry: Tone.Gain
+  compressor: Tone.Compressor
+  compWet: Tone.Gain
+}
+
 interface DrumKit {
   kick: Tone.MembraneSynth
   snare: Tone.NoiseSynth
+  // the tonal "shell" layer blended under the snare's noise — see SynthParams.snareTone
+  snareTone: Tone.MembraneSynth
+  snareToneGain: Tone.Gain
   clap: Tone.NoiseSynth
   hat: Tone.MetalSynth
   openhat: Tone.MetalSynth
@@ -120,6 +153,9 @@ export interface SampleSlice {
 class Engine {
   private chains = new Map<string, SynthChain>()
   private drums: DrumKit | null = null
+  // kick pitch is set per-trigger (triggerAttackRelease takes a frequency argument, not a settable
+  // instrument property like the other drum voice params below), so it's cached here instead.
+  private kickTuneHz = 32.7
   private repeatId: number | null = null
   private ready = false
   private startPromise: Promise<void> | null = null
@@ -130,6 +166,8 @@ class Engine {
   // Phase E: a second shared return bus, chorus -> phaser in series, one combined send level
   private chorusBus: Tone.Chorus | null = null
   private phaserBus: Tone.Phaser | null = null
+  // The drum/sample bus's filter+inserts+sends chain — see the DrumBus interface above.
+  private drumBus: DrumBus | null = null
   // Phase I: loaded sample (if any) that replaces the synthesized drum kit lane-for-lane.
   private sampleFullBuffer: AudioBuffer | null = null
   private sliceBoundaries: number[] = [] // length DRUM_LANES.length + 1: [0, b1, b2, b3, duration]
@@ -193,6 +231,11 @@ class Engine {
       this.startPromise = (async () => {
         await Tone.start()
         this.buildDrums()
+        // buildDrums() constructs fresh instruments at the hardcoded defaults — if a drums track's
+        // params were already adjusted (or loaded from a lesson) before this first play/interaction,
+        // re-apply them now so that work isn't silently discarded.
+        const drumsTrack = useStore.getState().tracks.find((t) => t.kind === 'drums')
+        if (drumsTrack) this.applyDrumVoiceParams(drumsTrack.synth)
         Tone.getDestination().volume.value = -2
         this.ready = true
       })()
@@ -216,22 +259,110 @@ class Engine {
     return { reverb: this.reverbBus, delay: this.delayBus!, mod: this.chorusBus! }
   }
 
+  private getDrumBus(): DrumBus {
+    if (!this.drumBus) {
+      const { reverb, delay, mod } = this.getBuses()
+      const filter = new Tone.Filter(12000, 'lowpass')
+      const panner = new Tone.Panner({ pan: 0, channelCount: 2 })
+      const vol = new Tone.Volume(0)
+      const reverbSend = new Tone.Gain(0)
+      const delaySend = new Tone.Gain(0)
+      const modSend = new Tone.Gain(0)
+      const eq3 = new Tone.EQ3()
+      const compIn = new Tone.Gain()
+      const compDry = new Tone.Gain(1)
+      const compressor = new Tone.Compressor()
+      const compWet = new Tone.Gain(0)
+      const compOut = new Tone.Gain()
+      const distortion = new Tone.Distortion({ distortion: 0, wet: 0 })
+      const bitcrush = new Tone.BitCrusher(8)
+
+      compIn.fan(compDry, compressor)
+      compressor.connect(compWet)
+      compDry.connect(compOut)
+      compWet.connect(compOut)
+      distortion.connect(bitcrush)
+
+      panner.chain(vol, this.getMaster())
+      panner.connect(reverbSend)
+      reverbSend.connect(reverb)
+      panner.connect(delaySend)
+      delaySend.connect(delay)
+      panner.connect(modSend)
+      modSend.connect(mod)
+
+      this.drumBus = { filter, panner, vol, reverbSend, delaySend, modSend, eq3, compIn, compDry, compressor, compWet, compOut, distortion, bitcrush, lastInsertOrder: [] }
+      this.wireInserts(this.drumBus, [])
+    }
+    return this.drumBus
+  }
+
+  private applyDrumBusParams(p: SynthParams) {
+    const bus = this.getDrumBus()
+    bus.filter.frequency.value = p.cutoff
+    bus.filter.Q.value = p.resonance
+    bus.filter.type = p.filterType
+    bus.panner.pan.value = p.pan
+    bus.vol.volume.value = p.volume
+    bus.reverbSend.gain.value = p.sendReverb
+    bus.delaySend.gain.value = p.sendDelay
+    bus.modSend.gain.value = p.sendMod
+    bus.eq3.low.value = p.eqLow
+    bus.eq3.mid.value = p.eqMid
+    bus.eq3.high.value = p.eqHigh
+    bus.compressor.threshold.value = p.compThreshold
+    bus.compressor.ratio.value = p.compRatio
+    bus.compressor.attack.value = p.compAttack
+    bus.compressor.release.value = p.compRelease
+    bus.compWet.gain.value = p.compMix
+    bus.compDry.gain.value = 1 - p.compMix
+    bus.distortion.distortion = p.distortionAmount
+    bus.distortion.wet.value = p.distortionMix
+    bus.bitcrush.bits.value = Math.round(p.bitcrushBits)
+    bus.bitcrush.wet.value = p.bitcrushMix
+    this.wireInserts(bus, p.insertOrder)
+  }
+
+  private applyDrumVoiceParams(p: SynthParams) {
+    if (!this.drums) return
+    this.kickTuneHz = p.kickTune
+    this.drums.kick.set({ pitchDecay: p.kickPunch, envelope: { decay: p.kickDecay } })
+    this.drums.snare.set({ envelope: { decay: p.snareDecay } })
+    this.drums.snareTone.set({ envelope: { decay: p.snareDecay } })
+    this.drums.snareToneGain.gain.value = p.snareTone
+    this.drums.hat.set({ envelope: { decay: p.hatDecay }, resonance: p.hatTone })
+    this.drums.openhat.set({ envelope: { decay: p.openHatDecay }, resonance: p.hatTone })
+  }
+
   private buildDrums() {
+    // every synthesized voice below feeds the drum bus's filter (not master directly), so the
+    // bus's filter/EQ/comp/distortion/sends — the same chain synth tracks already have — apply to
+    // the whole kit, sample-loaded or not (see DrumBus above).
+    const busIn = this.getDrumBus().filter
     const kick = new Tone.MembraneSynth({
       pitchDecay: 0.05,
       octaves: 7,
       envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.1 },
-    }).connect(this.getMaster())
+    }).connect(busIn)
     kick.volume.value = -2
 
-    const snareFilter = new Tone.Filter(1800, 'highpass').connect(this.getMaster())
+    const snareFilter = new Tone.Filter(1800, 'highpass').connect(busIn)
     const snare = new Tone.NoiseSynth({
       noise: { type: 'white' },
       envelope: { attack: 0.001, decay: 0.13, sustain: 0 },
     }).connect(snareFilter)
     snare.volume.value = -8
 
-    const clapFilter = new Tone.Filter(1100, 'bandpass').connect(this.getMaster())
+    // Body/shell tone, additive under the noise — silent (gain 0) at the default snareTone: 0,
+    // so a snare-only lesson's sound is unchanged until a student actually turns this up.
+    const snareToneGain = new Tone.Gain(0).connect(busIn)
+    const snareTone = new Tone.MembraneSynth({
+      pitchDecay: 0.02,
+      octaves: 4,
+      envelope: { attack: 0.001, decay: 0.13, sustain: 0, release: 0.05 },
+    }).connect(snareToneGain)
+
+    const clapFilter = new Tone.Filter(1100, 'bandpass').connect(busIn)
     clapFilter.Q.value = 1.2
     const clap = new Tone.NoiseSynth({
       noise: { type: 'pink' },
@@ -245,7 +376,7 @@ class Engine {
       modulationIndex: 32,
       resonance: 4000,
       octaves: 1.5,
-    }).connect(this.getMaster())
+    }).connect(busIn)
     hat.volume.value = -18
 
     const openhat = new Tone.MetalSynth({
@@ -254,10 +385,10 @@ class Engine {
       modulationIndex: 32,
       resonance: 4000,
       octaves: 1.5,
-    }).connect(this.getMaster())
+    }).connect(busIn)
     openhat.volume.value = -20
 
-    this.drums = { kick, snare, clap, hat, openhat }
+    this.drums = { kick, snare, snareTone, snareToneGain, clap, hat, openhat }
   }
 
   // ---------- Phase I: sampling (loads onto the existing 5 drum lanes) ----------
@@ -352,7 +483,7 @@ class Engine {
       const dur = Math.max(0.01, this.sliceBoundaries[i + 1] - start)
       const reversed = this.reversedLanes.has(lane)
       const region = this.extractSlice(start, dur, reversed)
-      const gain = new Tone.Gain(1).connect(this.getMaster())
+      const gain = new Tone.Gain(1).connect(this.getDrumBus().filter)
       const player = new Tone.Player(new Tone.ToneAudioBuffer(region)).connect(gain)
       this.samplePlayers[lane] = player
       this.sampleGains[lane] = gain
@@ -487,10 +618,12 @@ class Engine {
     if (!this.drums) return
     switch (lane) {
       case 'kick':
-        this.drums.kick.triggerAttackRelease('C1', '8n', t, velocity)
+        this.drums.kick.triggerAttackRelease(this.kickTuneHz, '8n', t, velocity)
         break
       case 'snare':
         this.drums.snare.triggerAttackRelease('8n', t, velocity)
+        // body/shell tone layer — silent unless snareTone > 0 (snareToneGain), see applyDrumVoiceParams
+        this.drums.snareTone.triggerAttackRelease('A2', '8n', t, velocity)
         break
       case 'clap':
         this.drums.clap.triggerAttackRelease('8n', t, velocity)
@@ -591,7 +724,7 @@ class Engine {
   // the order actually changed (compared to the last-applied order), so normal knob drags — which
   // call applyParams constantly but never touch insertOrder — don't tear down and rebuild
   // connections on every frame.
-  private wireInserts(chain: SynthChain, order: InsertKind[]) {
+  private wireInserts(chain: InsertNodes, order: InsertKind[]) {
     if (chain.lastInsertOrder.join(',') === order.join(',')) return
     chain.filter.disconnect()
     chain.eq3.disconnect()
@@ -687,11 +820,21 @@ class Engine {
   }
 
   updateSynth(track: Track) {
+    if (track.kind === 'drums') {
+      this.applyDrumBusParams(track.synth)
+      this.applyDrumVoiceParams(track.synth)
+      return
+    }
     const chain = this.chains.get(track.id)
     if (chain) this.applyParams(chain, track.synth)
   }
 
   sync(tracks: Track[]) {
+    const drumsTrack = tracks.find((t) => t.kind === 'drums')
+    if (drumsTrack) {
+      this.applyDrumBusParams(drumsTrack.synth)
+      this.applyDrumVoiceParams(drumsTrack.synth)
+    }
     const synthIds = new Set(tracks.filter((t) => t.kind === 'synth').map((t) => t.id))
     for (const [id, chain] of this.chains) {
       if (!synthIds.has(id)) {
@@ -834,6 +977,23 @@ class Engine {
         if (!s.arrangement.active[tr.id]?.[section]) continue
       }
       if (tr.kind === 'drums') {
+        // Filter sweep — the single most-cited chop effect in production tutorials — reusing the
+        // exact same LFO->cutoff math synth tracks use, just aimed at the drum bus's filter
+        // instead of a per-voice one. Everything else on tr.synth (static filter/EQ/comp/
+        // distortion/sends) is applied reactively by applyDrumBusParams whenever the user drags a
+        // knob; only the continuously-moving LFO sweep needs to run every step like this.
+        const p = tr.synth
+        if ((p.lfoDest === 'cutoff' || p.lfoDest === 'amp') && p.lfoDepth > 0) {
+          const lfoRateHz = p.lfoSync ? syncedRateHz(s.bpm, p.lfoSyncRate) : p.lfoRate
+          const lfoValue = lfoWaveValue(p, lfoRateHz, time)
+          const bus = this.getDrumBus()
+          if (p.lfoDest === 'cutoff') {
+            const hz = p.cutoff * Math.pow(2, p.lfoDepth * lfoValue)
+            bus.filter.frequency.linearRampToValueAtTime(hz, swingTime + stepSeconds)
+          } else {
+            bus.vol.volume.linearRampToValueAtTime(p.volume + p.lfoDepth * lfoValue * 12, swingTime + stepSeconds)
+          }
+        }
         for (const lane of DRUM_LANES) {
           const vel = tr.pattern[lane][step % 16]
           if (vel) this.triggerDrum(lane, swingTime, vel)

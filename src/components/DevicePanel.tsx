@@ -349,84 +349,20 @@ export function DevicePanel({ track }: { track: Track }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const samplePeaks = useMemo(() => (sampleLoaded ? engine.getSampleWaveformPeaks(300) : []), [sampleLoaded])
 
+  const isDrums = track.kind === 'drums'
   const visibleParams = lesson?.visibleParams
-  const visible = (key: keyof SynthParams) => !visibleParams || visibleParams.includes(key)
+  // Drum tracks never had a filter/EQ/comp/distortion/sends UI before this — so unlike synth
+  // tracks (where undefined visibleParams has always meant "show everything," a convention many
+  // existing lessons rely on), a drum-kind lesson must opt in explicitly, or every pre-existing
+  // drum-pattern lesson would suddenly sprout 7 new sections nobody asked it to teach.
+  const visible = (key: keyof SynthParams) => (isDrums ? !!visibleParams && visibleParams.includes(key) : !visibleParams || visibleParams.includes(key))
   const statusOf = (key: keyof SynthParams): ParamStatus | undefined => paramScores?.[key]
-
-  if (track.kind === 'drums') {
-    return (
-      <div className="device">
-        <Scope />
-        <Section title="DRUM RACK" hint="The 5-lane synthesized/sampled kit this track's step sequencer triggers">
-          <div className="drum-pads">
-            {DRUM_LANES.map((lane) => (
-              <button key={lane} className="pad" onClick={() => void engine.previewDrum(lane)} title={`Click to audition ${DRUM_LABELS[lane]}`}>
-                {DRUM_LABELS[lane]}
-              </button>
-            ))}
-          </div>
-        </Section>
-        <Section title="SAMPLE" hint="Load your own audio file to replace the synthesized kit, sliced across the 5 pads above">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="audio/*"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) void loadDrumSample(file)
-              e.target.value = ''
-            }}
-          />
-          <div className="knob-row" style={{ alignItems: 'center', gap: 8 }}>
-            <button className="clear-btn" onClick={() => fileInputRef.current?.click()} title="Pick a short audio file — it auto-slices into 5 equal chunks, one per pad">
-              Load Sample
-            </button>
-            {sampleLoaded && (
-              <button className="clear-btn" onClick={clearDrumSample} title="Remove the loaded sample and go back to the synthesized kit">
-                Clear
-              </button>
-            )}
-          </div>
-          {sampleLoaded && sampleSliceMeta ? (
-            (() => {
-              const boundaries = [
-                0,
-                ...DRUM_LANES.map((lane) => (sampleSliceMeta[lane]?.start ?? 0) + (sampleSliceMeta[lane]?.dur ?? 0)),
-              ]
-              const duration = boundaries[boundaries.length - 1]
-              return (
-                <SampleSliceEditor
-                  peaks={samplePeaks}
-                  duration={duration}
-                  boundaries={boundaries}
-                  sliceMeta={sampleSliceMeta}
-                  onDragBoundary={(i, t) => setSampleSliceBoundary(i, t)}
-                  onToggleReverse={(lane) => toggleSampleSliceReverse(lane)}
-                />
-              )
-            })()
-          ) : (
-            <div className="device-note" style={{ padding: '8px 0 0' }}>
-              Load any short audio file to auto-slice it across the 5 pads (equal regions), replacing the synthesized kit lane-for-lane.
-            </div>
-          )}
-          {sampleLoaded && (
-            <div className="device-note" style={{ padding: '8px 0 0' }}>
-              Loaded "{sampleLoaded.name}" — drag a boundary line above to reslice by hand, click a pad's label to reverse it.
-            </div>
-          )}
-        </Section>
-        <div className="device-note">
-          909-style synthesized kit — kick from a pitched membrane, snare/clap from filtered noise,
-          hats from inharmonic FM. Click a pad to audition.
-        </div>
-      </div>
-    )
-  }
 
   const p = track.synth
   const set = (patch: Partial<typeof p>) => setSynth(track.id, patch)
+  // Drums have no oscillator, so an LFO can only reach the drum bus's filter/volume (wired in
+  // engine.ts's tick()) — pitch and wavetable-position destinations are meaningless without one.
+  const lfoDestOptions = isDrums ? LFO_DESTS.filter((d) => d.dest === 'off' || d.dest === 'cutoff' || d.dest === 'amp') : LFO_DESTS
 
   const showFilter = visible('cutoff') || visible('resonance') || visible('filterType')
   const showEnv = visible('attack') || visible('decay') || visible('sustain') || visible('release')
@@ -457,7 +393,121 @@ export function DevicePanel({ track }: { track: Track }) {
   return (
     <div className="device">
       <Scope />
-      {visible('osc') && (
+      {isDrums && (
+        <>
+          <Section title="DRUM RACK" hint="The 5-lane synthesized/sampled kit this track's step sequencer triggers">
+            <div className="drum-pads">
+              {DRUM_LANES.map((lane) => (
+                <button key={lane} className="pad" onClick={() => void engine.previewDrum(lane)} title={`Click to audition ${DRUM_LABELS[lane]}`}>
+                  {DRUM_LABELS[lane]}
+                </button>
+              ))}
+            </div>
+          </Section>
+          <Section title="SAMPLE" hint="Load your own audio file to replace the synthesized kit, sliced across the 5 pads above">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void loadDrumSample(file)
+                e.target.value = ''
+              }}
+            />
+            <div className="knob-row" style={{ alignItems: 'center', gap: 8 }}>
+              <button className="clear-btn" onClick={() => fileInputRef.current?.click()} title="Pick a short audio file — it auto-slices into 5 equal chunks, one per pad">
+                Load Sample
+              </button>
+              {sampleLoaded && (
+                <button className="clear-btn" onClick={clearDrumSample} title="Remove the loaded sample and go back to the synthesized kit">
+                  Clear
+                </button>
+              )}
+            </div>
+            {sampleLoaded && sampleSliceMeta ? (
+              (() => {
+                const boundaries = [
+                  0,
+                  ...DRUM_LANES.map((lane) => (sampleSliceMeta[lane]?.start ?? 0) + (sampleSliceMeta[lane]?.dur ?? 0)),
+                ]
+                const duration = boundaries[boundaries.length - 1]
+                return (
+                  <SampleSliceEditor
+                    peaks={samplePeaks}
+                    duration={duration}
+                    boundaries={boundaries}
+                    sliceMeta={sampleSliceMeta}
+                    onDragBoundary={(i, t) => setSampleSliceBoundary(i, t)}
+                    onToggleReverse={(lane) => toggleSampleSliceReverse(lane)}
+                  />
+                )
+              })()
+            ) : (
+              <div className="device-note" style={{ padding: '8px 0 0' }}>
+                Load any short audio file to auto-slice it across the 5 pads (equal regions), replacing the synthesized kit lane-for-lane.
+              </div>
+            )}
+            {sampleLoaded && (
+              <div className="device-note" style={{ padding: '8px 0 0' }}>
+                Loaded "{sampleLoaded.name}" — drag a boundary line above to reslice by hand, click a pad's label to reverse it.
+              </div>
+            )}
+          </Section>
+          <div className="device-note">
+            909-style synthesized kit — kick from a pitched membrane, snare/clap from filtered noise,
+            hats from inharmonic FM. Click a pad to audition. Everything below feeds the same
+            filter/EQ/comp/distortion/sends chain synth tracks use — it shapes the whole kit or
+            loaded sample together, not pad-by-pad. The KICK/SNARE/HI-HAT sections below only
+            affect the synthesized voices — once a sample is loaded, its slices replace them
+            lane-for-lane and these knobs go quiet.
+          </div>
+          {(visible('kickTune') || visible('kickPunch') || visible('kickDecay')) && (
+            <Section title="KICK" hint="The synthesized kick's own sound — a sine pitch-swept down over the hit, the same recipe every kick-synthesis tutorial teaches">
+              <div className="knob-row">
+                {visible('kickTune') && (
+                  <Knob label="Tune" value={p.kickTune} min={25} max={150} log format={hz} status={statusOf('kickTune')} onChange={(v) => set({ kickTune: v })} hint="Base pitch of the kick — tune it to match the bassline's key, a standard sound-design move" />
+                )}
+                {visible('kickPunch') && (
+                  <Knob label="Punch" value={p.kickPunch} min={0.01} max={0.3} log format={ms} status={statusOf('kickPunch')} onChange={(v) => set({ kickPunch: v })} hint="How fast the pitch envelope falls — shorter is a tighter click (909-ish), longer is a looser glide (808-ish)" />
+                )}
+                {visible('kickDecay') && (
+                  <Knob label="Decay" value={p.kickDecay} min={0.1} max={1.2} log format={ms} status={statusOf('kickDecay')} onChange={(v) => set({ kickDecay: v })} hint="How long the kick rings out — short and tight vs. long and boomy" />
+                )}
+              </div>
+            </Section>
+          )}
+          {(visible('snareTone') || visible('snareDecay')) && (
+            <Section title="SNARE" hint="Every drum-machine snare is really two layers: a tonal shell and filtered noise for the wires">
+              <div className="knob-row">
+                {visible('snareTone') && (
+                  <Knob label="Tone" value={p.snareTone} min={0} max={1} format={pct} status={statusOf('snareTone')} onChange={(v) => set({ snareTone: v })} hint="Blends in a tonal 'shell' layer under the noise — 0 is pure noise (thin/tight), higher adds body/pitch" />
+                )}
+                {visible('snareDecay') && (
+                  <Knob label="Decay" value={p.snareDecay} min={0.05} max={0.5} log format={ms} status={statusOf('snareDecay')} onChange={(v) => set({ snareDecay: v })} hint="Short and tight suits faster genres; 50ms+ gives a weightier, slower-feeling snare" />
+                )}
+              </div>
+            </Section>
+          )}
+          {(visible('hatDecay') || visible('openHatDecay') || visible('hatTone')) && (
+            <Section title="HI-HAT" hint="Closed vs. open is mostly just decay length — same metallic voice, different lengths">
+              <div className="knob-row">
+                {visible('hatDecay') && (
+                  <Knob label="Closed" value={p.hatDecay} min={0.02} max={0.3} log format={ms} status={statusOf('hatDecay')} onChange={(v) => set({ hatDecay: v })} hint="Closed hat's decay — the short, tight 'tick'" />
+                )}
+                {visible('openHatDecay') && (
+                  <Knob label="Open" value={p.openHatDecay} min={0.1} max={1.5} log format={ms} status={statusOf('openHatDecay')} onChange={(v) => set({ openHatDecay: v })} hint="Open hat's decay — how long it rings before choking off" />
+                )}
+                {visible('hatTone') && (
+                  <Knob label="Tone" value={p.hatTone} min={1000} max={10000} log format={hz} status={statusOf('hatTone')} onChange={(v) => set({ hatTone: v })} hint="Brightness — shared by both closed and open hat" />
+                )}
+              </div>
+            </Section>
+          )}
+        </>
+      )}
+      {!isDrums && visible('osc') && (
         <Section title="OSC" hint="The main oscillator — the wave everything else in this patch is built around">
           <div className="wave-btns" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
             {WAVES.map((w) => (
@@ -522,7 +572,7 @@ export function DevicePanel({ track }: { track: Track }) {
           )}
         </Section>
       )}
-      {showOscBank && (
+      {!isDrums && showOscBank && (
         <Section title="OSC 2 / SUB / NOISE" hint="Additional oscillator-bank layers summed in with the main oscillator before the filter">
           {visible('osc2Type') && (
             <div className="wave-btns wave-btns-row" style={{ marginBottom: 8 }}>
@@ -590,7 +640,7 @@ export function DevicePanel({ track }: { track: Track }) {
           </div>
         </Section>
       )}
-      {showFm && (
+      {!isDrums && showFm && (
         <Section title="FM" hint="A separate FM (frequency modulation) voice, mixed in alongside the subtractive oscillators above">
           <div className="knob-row">
             {visible('fmLevel') && (
@@ -606,7 +656,10 @@ export function DevicePanel({ track }: { track: Track }) {
         </Section>
       )}
       {showFilter && (
-        <Section title="FILTER" hint="Shapes the oscillator bank's tone by rolling off part of the frequency spectrum">
+        <Section
+          title="FILTER"
+          hint={isDrums ? "Shapes the whole kit or loaded sample's tone by rolling off part of the frequency spectrum — one filter shared by all 5 pads" : "Shapes the oscillator bank's tone by rolling off part of the frequency spectrum"}
+        >
           {visible('filterType') && (
             <div className="wave-btns" style={{ marginBottom: 8, gridTemplateColumns: '1fr 1fr 1fr' }}>
               {FILTER_TYPES.map((f) => (
@@ -631,7 +684,7 @@ export function DevicePanel({ track }: { track: Track }) {
           </div>
         </Section>
       )}
-      {showFilterEnv && (
+      {!isDrums && showFilterEnv && (
         <Section title="FILTER ENV" hint="A second envelope, separate from the amp envelope below, that sweeps the filter cutoff on every note-on">
           <div className="knob-row">
             {visible('filterEnvAmount') && (
@@ -658,7 +711,7 @@ export function DevicePanel({ track }: { track: Track }) {
           </div>
         </Section>
       )}
-      {showEnv && (
+      {!isDrums && showEnv && (
         <Section title="ENVELOPE" hint="The amplitude (volume) envelope — how loud a note is at each moment from key-down to silence">
           <div className="knob-row">
             {visible('attack') && (
@@ -679,7 +732,7 @@ export function DevicePanel({ track }: { track: Track }) {
           </div>
         </Section>
       )}
-      {showArp && (
+      {!isDrums && showArp && (
         <Section title="ARPEGGIATOR" hint="Fans notes stacked at the same grid position out into a fast sequence instead of playing them as a block chord">
           <div className="knob-row" style={{ alignItems: 'center' }}>
             {visible('arpOn') && (
@@ -724,8 +777,8 @@ export function DevicePanel({ track }: { track: Track }) {
       {showLfo && (
         <Section title="LFO" hint="A low-frequency oscillator that continuously modulates one destination — the classic wobble/vibrato/tremolo mechanism">
           {visible('lfoDest') && (
-            <div className="wave-btns" style={{ marginBottom: 8, gridTemplateColumns: 'repeat(5, 1fr)' }}>
-              {LFO_DESTS.map((d) => (
+            <div className="wave-btns" style={{ marginBottom: 8, gridTemplateColumns: `repeat(${lfoDestOptions.length}, 1fr)` }}>
+              {lfoDestOptions.map((d) => (
                 <button
                   key={d.dest}
                   className={`wave ${p.lfoDest === d.dest ? 'on' : ''} ${p.lfoDest === d.dest && statusOf('lfoDest') ? `status-${statusOf('lfoDest')}` : ''}`}
@@ -799,7 +852,7 @@ export function DevicePanel({ track }: { track: Track }) {
           </div>
         </Section>
       )}
-      {showLfo2 && (
+      {!isDrums && showLfo2 && (
         <Section title="LFO 2" hint="A second, independent LFO with its own destination list — lets two modulation routes run at once">
           {visible('lfo2Dest') && (
             <select className="duck-source-select" value={p.lfo2Dest} onChange={(e) => set({ lfo2Dest: e.target.value as Lfo2Dest })} title="What this LFO modulates">
@@ -854,7 +907,7 @@ export function DevicePanel({ track }: { track: Track }) {
           </div>
         </Section>
       )}
-      {showMacro && (
+      {!isDrums && showMacro && (
         <Section title="MACRO" hint="One performance knob mapped to several parameters at once">
           <div className="knob-row">
             <Knob
@@ -970,7 +1023,7 @@ export function DevicePanel({ track }: { track: Track }) {
           </div>
         </Section>
       )}
-      {showSidechain && (
+      {!isDrums && showSidechain && (
         <Section title="SIDECHAIN" hint="Ducks this track's volume whenever another track's kick hits — the classic dance-music 'pump'">
           {visible('duckSource') && (
             <select

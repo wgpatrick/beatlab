@@ -139,6 +139,24 @@ export interface SynthParams {
   // docs/ROADMAP.md Phase H item 42.
   keytrackAmount: number // 0..1, higher notes brighten the cutoff
   velToFilterAmount: number // 0..1, harder-played notes brighten the cutoff
+
+  // ---------- Drum voice sound design (drum-kind tracks only; every synth-kind track carries
+  // these unused, same convention as every other kind-specific block above) ----------
+  // Kick: a sine pitch-swept membrane, same recipe every kick-synthesis tutorial teaches — a fast
+  // pitch envelope (kickPunch) gives the "click," the amplitude decay (kickDecay) gives the
+  // "boom." Tuning kickTune to the bassline's key is the other named, near-universal technique.
+  kickTune: number // Hz, base pitch of the kick's pitch envelope
+  kickPunch: number // seconds, pitch-envelope decay — shorter = tighter click, longer = looser 808-style glide
+  kickDecay: number // seconds, amplitude decay — short = 909-tight, long = 808-boomy
+  // Snare: a tonal "shell" layer blended with filtered noise ("wires") — snareTone 0 = pure noise
+  // (today's default, unchanged), higher blends in more body/pitch.
+  snareTone: number // 0..1
+  snareDecay: number // seconds
+  // Hi-hat: closed vs open is mostly just decay length; hatTone is shared brightness (resonance
+  // frequency) since both lanes are the same metallic voice at different lengths.
+  hatDecay: number // seconds, closed hat
+  openHatDecay: number // seconds, open hat
+  hatTone: number // Hz, shared resonance/brightness for both hat lanes
 }
 
 export interface Note {
@@ -330,4 +348,14 @@ export const DEFAULT_SYNTH: SynthParams = {
   arpPattern: 'up',
   keytrackAmount: 0,
   velToFilterAmount: 0,
+  // matches the previously-hardcoded kick/snare/hat synthesis exactly — no drum-kind track's
+  // sound changes until a student actually turns one of these knobs
+  kickTune: 32.7, // Hz — Tone.Frequency('C1').toFrequency()
+  kickPunch: 0.05,
+  kickDecay: 0.4,
+  snareTone: 0,
+  snareDecay: 0.13,
+  hatDecay: 0.05,
+  openHatDecay: 0.35,
+  hatTone: 4000,
 }
