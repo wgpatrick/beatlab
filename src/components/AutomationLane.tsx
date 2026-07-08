@@ -105,7 +105,7 @@ export function AutomationLane({ track }: { track: Track }) {
         </button>
       </div>
       <div className="automation-scroll">
-        <div className="automation-grid" style={{ width, height: HEIGHT }} onMouseDown={onClick}>
+        <div className="automation-grid" style={{ width, height: HEIGHT }} onPointerDown={onClick}>
           {Array.from({ length: steps + 1 }, (_, i) => (
             <div key={i} className={`grid-vline ${i % 16 === 0 ? 'bar' : i % 4 === 0 ? 'beat' : ''}`} style={{ left: i * CELL }} />
           ))}

@@ -8,7 +8,14 @@ function starString(scores: ScoreMap) {
   return ' ' + '★'.repeat(stars) + '☆'.repeat(3 - stars)
 }
 
-export function LessonPanel() {
+/** onClose is provided only by the phone/tablet layout, where the panel renders as a bottom
+ * sheet — it adds a dismiss bar at the top of the sheet. Desktop passes nothing. */
+export function LessonPanel({ onClose }: { onClose?: () => void }) {
+  const closeBar = onClose && (
+    <button className="sheet-close" onClick={onClose}>
+      ▾ hide lesson
+    </button>
+  )
   const mode = useStore((s) => s.mode)
   const currentLessonId = useStore((s) => s.currentLessonId)
   const lessonParams = useStore((s) => s.lessonParams)
@@ -26,6 +33,7 @@ export function LessonPanel() {
   if (inTrackLab && findLesson(currentLessonId)?.module !== 'Track Deconstruction') {
     return (
       <aside className="lesson-panel">
+        {closeBar}
         <div className="lesson-module">TRACK LAB</div>
         <h2>Deconstruct a Song</h2>
         <p className="lesson-summary">
@@ -54,6 +62,7 @@ export function LessonPanel() {
   if (mode === 'sandbox') {
     return (
       <aside className="lesson-panel">
+        {closeBar}
         <div className="lesson-module">SANDBOX</div>
         <h2>Free Session</h2>
         <p className="lesson-summary">
@@ -76,6 +85,7 @@ export function LessonPanel() {
 
   return (
     <aside className="lesson-panel">
+      {closeBar}
       <div className="lesson-module">
         {lesson.module.toUpperCase()}
         {lesson.drill && <span className="drill-badge">DRILL</span>}

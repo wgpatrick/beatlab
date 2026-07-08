@@ -243,6 +243,16 @@ export function PianoRoll({ track }: { track: Track }) {
     setCreating(null)
   }
 
+  // Touch scrolling: the grid deliberately has no touch-action:none, so a finger drag pans the
+  // roll and the browser fires pointercancel on whatever gesture was in flight. Abandon it —
+  // without this a canceled touch would leave a phantom half-drawn note preview behind.
+  const onGridPointerCancel = () => {
+    boxSelectRef.current = null
+    setSelectionBox(null)
+    createRef.current = null
+    setCreating(null)
+  }
+
   const onNotePointerDown = (e: React.PointerEvent<HTMLDivElement>, note: Track['notes'][number]) => {
     e.stopPropagation()
     const el = e.currentTarget
@@ -298,6 +308,13 @@ export function PianoRoll({ track }: { track: Track }) {
     // Plain click (no drag) deletes — except an Alt+click held for velocity that never actually
     // moved, which would otherwise delete a note the user was just trying to nudge.
     if (d && !d.moved && d.mode !== 'velocity') removeNote(track.id, note.id)
+  }
+
+  // A canceled touch on a note must NOT fall through to onNotePointerUp's tap-deletes rule —
+  // the user was scrolling, not deleting.
+  const onNotePointerCancel = () => {
+    dragRef.current = null
+    setVelocityPreview(null)
   }
 
   const onNoteWheel = (e: React.WheelEvent<HTMLDivElement>, note: Track['notes'][number]) => {
@@ -408,7 +425,7 @@ export function PianoRoll({ track }: { track: Track }) {
                   key={pitch}
                   className={`key ${BLACK.has(pc) ? 'black' : 'white'}`}
                   style={{ height: ROW }}
-                  onMouseDown={() => void engine.previewNote(track, pitch)}
+                  onPointerDown={() => void engine.previewNote(track, pitch)}
                 >
                   {pc === 0 ? noteName(pitch) : ''}
                 </div>
@@ -421,6 +438,7 @@ export function PianoRoll({ track }: { track: Track }) {
             onPointerDown={onGridPointerDown}
             onPointerMove={onGridPointerMove}
             onPointerUp={onGridPointerUp}
+            onPointerCancel={onGridPointerCancel}
           >
             {Array.from({ length: rows }, (_, i) => {
               const pitch = MAX_PITCH - i
@@ -458,6 +476,7 @@ export function PianoRoll({ track }: { track: Track }) {
                 onPointerDown={(e) => onNotePointerDown(e, n)}
                 onPointerMove={onNotePointerMove}
                 onPointerUp={() => onNotePointerUp(n)}
+                onPointerCancel={onNotePointerCancel}
                 onWheel={(e) => onNoteWheel(e, n)}
               >
                 {NOTE_NAMES[n.pitch % 12]}

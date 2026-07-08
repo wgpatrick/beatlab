@@ -34,11 +34,13 @@ button {
   border: none;
   cursor: pointer;
   padding: 0;
+  touch-action: manipulation; /* no double-tap-zoom delay on touch screens */
 }
 
 .app {
   display: grid;
   height: 100vh;
+  height: 100dvh; /* mobile browsers: exclude the collapsing URL bar from the viewport */
   grid-template-rows: 44px 1fr;
   grid-template-columns: 225px 1fr 6px 300px;
   grid-template-areas:
@@ -1685,4 +1687,138 @@ button.seq-label:hover {
   border-radius: 4px;
   cursor: crosshair;
   touch-action: none;
+}
+
+/* ---------- mobile layout (phones/small tablets) ---------- */
+/* The .app-mobile class comes from React (a matchMedia hook in App.tsx, ≤ 840px) rather than a
+   plain @media block, so the JSX (drawer toggles, hidden resize handles) and the CSS always agree
+   on the breakpoint. Single column: transport on top, editor + device panel below; the curriculum
+   sidebar becomes a left slide-in drawer and the lesson panel a bottom sheet, both toggled from
+   the transport bar. */
+
+.app.app-mobile {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-mobile .transport {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 44px;
+  padding: 6px 8px;
+  gap: 6px 10px;
+}
+/* No physical keys or (reliable) Web MIDI on phones — hide the hardware-input group. */
+.app-mobile .midi-group,
+.app-mobile .keyboard-hint {
+  display: none;
+}
+.app-mobile .master-meter-value {
+  display: none;
+}
+.app-mobile .tbtn {
+  height: 32px;
+  min-width: 38px;
+}
+
+.app-mobile .main {
+  flex: 1;
+  min-height: 0;
+}
+.app-mobile .track-strip {
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.app-mobile .device-bar {
+  height: 190px;
+  flex-shrink: 0;
+}
+
+/* Curriculum sidebar → left drawer */
+.app-mobile .sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(85vw, 320px);
+  z-index: 60;
+  transform: translateX(-105%);
+  transition: transform 0.22s ease;
+  border-right: 1px solid var(--border2);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.6);
+}
+.app-mobile.nav-open .sidebar {
+  transform: none;
+}
+.app-mobile .lesson-item,
+.app-mobile .module-name {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 50;
+}
+
+/* Lesson panel → bottom sheet. Deliberately no backdrop: the instrument above stays usable, so
+   you can read the task and turn the knobs at the same time. */
+.app-mobile .lesson-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 58dvh;
+  z-index: 40;
+  transform: translateY(108%);
+  transition: transform 0.22s ease;
+  border-left: none;
+  border-top: 1px solid var(--border2);
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.6);
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+}
+.app-mobile.lesson-open .lesson-panel {
+  transform: none;
+}
+.sheet-close {
+  display: block;
+  width: 100%;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 2px 0 8px;
+  border-bottom: 1px solid var(--border2);
+}
+.sheet-close:hover {
+  color: var(--text);
+}
+
+/* Editor toolbars on mobile: the keyboard-shortcut cheat-sheets are mouse/keyboard instructions
+   (shift+drag, alt+drag, scroll) that don't exist on touch — hide them, and keep the remaining
+   controls on one horizontally-scrollable line instead of wrapping over the grid. */
+.app-mobile .toolbar-tip {
+  display: none;
+}
+.app-mobile .editor-toolbar {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.app-mobile .editor-toolbar .toolbar-label {
+  white-space: nowrap;
+}
+/* Slimmer transport on phones: tighter quantize (MIDI recording is hidden anyway) */
+.app-mobile .lesson-toggle,
+.app-mobile .nav-toggle {
+  white-space: nowrap;
+  padding: 0 10px;
+  width: auto;
+}
+.app-mobile .editor-toolbar > * {
+  flex-shrink: 0; /* nowrap + overflow-x scroll: children scroll, never collapse */
 }

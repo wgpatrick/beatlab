@@ -51,7 +51,9 @@ const URL = await new Promise((resolve, reject) => {
 let browser
 try {
   browser = await chromium.launch({
-    channel: 'chrome',
+    // Default to the system Chrome; CHROME_PATH points at any Chromium binary instead, for
+    // containers/CI where Chrome isn't installed at the standard location.
+    ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' }),
     headless: true,
     args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'],
   })

@@ -1,6 +1,15 @@
 import { useStore } from '../state/store'
 
-export function TransportBar() {
+/** Present only in the phone/tablet layout: hamburger for the curriculum drawer on the left,
+ * lesson-sheet toggle on the right. Desktop renders neither. */
+export interface MobileTransportControls {
+  navOpen: boolean
+  lessonOpen: boolean
+  onToggleNav: () => void
+  onToggleLesson: () => void
+}
+
+export function TransportBar({ mobile }: { mobile?: MobileTransportControls }) {
   const isPlaying = useStore((s) => s.isPlaying)
   const bpm = useStore((s) => s.bpm)
   const swing = useStore((s) => s.swing)
@@ -38,6 +47,15 @@ export function TransportBar() {
 
   return (
     <header className="transport">
+      {mobile && (
+        <button
+          className={`tbtn nav-toggle ${mobile.navOpen ? 'active' : ''}`}
+          title="Curriculum"
+          onClick={mobile.onToggleNav}
+        >
+          ☰
+        </button>
+      )}
       <div className="logo">
         BEAT<span>LAB</span>
       </div>
@@ -179,6 +197,15 @@ export function TransportBar() {
           Track Lab
         </button>
       </div>
+      {mobile && (
+        <button
+          className={`tbtn lesson-toggle ${mobile.lessonOpen ? 'active' : ''}`}
+          title="Show/hide the lesson task"
+          onClick={mobile.onToggleLesson}
+        >
+          {mobile.lessonOpen ? 'Lesson ▾' : 'Lesson ▴'}
+        </button>
+      )}
     </header>
   )
 }
