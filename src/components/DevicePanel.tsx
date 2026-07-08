@@ -205,11 +205,13 @@ function LfoStepEditor({ steps, onChange }: { steps: number[]; onChange: (s: num
 // verified), never bundled — all three are unambiguously public domain in the US (two are federal
 // works, the 1916 Edison is pre-1931). A ~12s window keeps the 5 equal pads usable; students
 // reslice from there. The 1916 shellac's grit is a feature: that IS the classic sampling texture.
+// URLs point at Commons' auto-generated MP3 transcodes, not the Ogg originals — Safari/iOS can't
+// decodeAudioData Ogg Vorbis, and MP3 decodes everywhere.
 const STARTER_SAMPLES: { label: string; name: string; url: string; startSec: number; durSec: number; credit: string }[] = [
   {
     label: 'Choir',
     name: 'Angels We Have Heard on High (US Army Band Chorus)',
-    url: 'https://upload.wikimedia.org/wikipedia/commons/8/87/U.S._Army_Band_-_Angels_We_Have_Heard_on_High.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/transcoded/8/87/U.S._Army_Band_-_Angels_We_Have_Heard_on_High.ogg/U.S._Army_Band_-_Angels_We_Have_Heard_on_High.ogg.mp3',
     startSec: 2,
     durSec: 12,
     credit: 'A cappella choir — U.S. Army Band Chorus, public domain (U.S. federal work), streamed from Wikimedia Commons',
@@ -217,7 +219,7 @@ const STARTER_SAMPLES: { label: string; name: string; url: string; startSec: num
   {
     label: 'Vocal',
     name: 'America the Beautiful (USAF Singing Sergeants)',
-    url: 'https://upload.wikimedia.org/wikipedia/commons/5/58/America_the_Beautiful.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/transcoded/5/58/America_the_Beautiful.ogg/America_the_Beautiful.ogg.mp3',
     startSec: 10,
     durSec: 12,
     credit: 'Choral vocals — The Singing Sergeants, U.S. Air Force Band, public domain (U.S. federal work), streamed from Wikimedia Commons',
@@ -225,7 +227,7 @@ const STARTER_SAMPLES: { label: string; name: string; url: string; startSec: num
   {
     label: '1916 Shellac',
     name: 'Hallelujah Chorus (Edison recording, 1916)',
-    url: 'https://upload.wikimedia.org/wikipedia/commons/9/90/Messiah_Hallelujah_Chorus_1916.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/transcoded/9/90/Messiah_Hallelujah_Chorus_1916.ogg/Messiah_Hallelujah_Chorus_1916.ogg.mp3',
     startSec: 30,
     durSec: 12,
     credit: 'A 1916 Edison recording — public domain (pre-1931), streamed from Wikimedia Commons. A century of surface noise included, free of charge',
@@ -405,6 +407,7 @@ export function DevicePanel({ track }: { track: Track }) {
   const samplePitchMode = useStore((s) => s.samplePitchMode)
   const setSamplePitchMode = useStore((s) => s.setSamplePitchMode)
   const [starterLoading, setStarterLoading] = useState<string | null>(null)
+  const [starterError, setStarterError] = useState<string | null>(null)
   const toggleSampleSliceReverse = useStore((s) => s.toggleSampleSliceReverse)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const samplePeaks = useMemo(() => (sampleLoaded ? engine.getSampleWaveformPeaks(300) : []), [sampleLoaded])
@@ -496,10 +499,11 @@ export function DevicePanel({ track }: { track: Track }) {
                   disabled={starterLoading !== null}
                   onClick={async () => {
                     setStarterLoading(s.name)
+                    setStarterError(null)
                     try {
                       await loadStarterSample(s.url, s.name, s.startSec, s.durSec)
                     } catch {
-                      // offline / fetch blocked — the note below already says these stream from the web
+                      setStarterError(`Couldn't load "${s.label}" — these stream from Wikimedia Commons, so check your connection and try again.`)
                     } finally {
                       setStarterLoading(null)
                     }
@@ -510,6 +514,11 @@ export function DevicePanel({ track }: { track: Track }) {
                 </button>
               ))}
             </div>
+            {starterError && (
+              <div className="device-note" style={{ padding: '6px 0 0', color: '#e06c75' }}>
+                {starterError}
+              </div>
+            )}
             {sampleLoaded && sampleSliceMeta ? (
               (() => {
                 const boundaries = [

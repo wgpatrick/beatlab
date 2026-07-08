@@ -667,8 +667,19 @@ class Engine {
     return t
   }
 
+  // Per-lane monotonic trigger guard — the transport-vs-preview variant of the race above, found
+  // by the smoke suite: toggling a step fires a preview "right now", and if Play is pressed within
+  // that same instant, the transport's first tick can schedule the SAME lane's (single-instance)
+  // player/voice at a time at-or-before the preview's start, violating the strictly-increasing
+  // start rule. Nudging any non-increasing trigger 5ms forward is inaudible and covers every
+  // combination (preview→preview, preview→transport, transport→preview).
+  private lastLaneTriggerTime: Partial<Record<DrumLane, number>> = {}
+
   triggerDrum(lane: DrumLane, time?: number, velocity = 1) {
-    const t = time ?? this.nextPreviewTime()
+    let t = time ?? this.nextPreviewTime()
+    const lastLane = this.lastLaneTriggerTime[lane]
+    if (lastLane !== undefined && t <= lastLane) t = lastLane + 0.005
+    this.lastLaneTriggerTime[lane] = t
     const player = this.samplePlayers[lane]
     if (player) {
       // Approximate per-hit velocity via the slice's own gain node rather than a real per-voice
