@@ -1422,6 +1422,19 @@ button.seq-label:hover {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+.tl-starters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+  justify-content: center;
+  cursor: default; /* inside the click-to-browse dropzone, but clicks here don't open the picker */
+}
+.tl-starters-label {
+  color: var(--dim);
+  font-size: 11px;
+}
 .tl-error {
   color: var(--red);
   max-width: 520px;

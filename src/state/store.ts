@@ -163,6 +163,9 @@ export interface AppState {
   recordNote: (trackId: string, note: Omit<Note, 'id'>) => void
   goToTrackLab: () => void
   loadTrackLabFile: (file: File) => Promise<void>
+  /** starter songs: stream a public-domain recording (Wikimedia Commons, CORS `*`) into the same
+   * decode→analyze path as a dropped file — see STARTER_SONGS in TrackLab.tsx */
+  loadTrackLabFromUrl: (url: string, name: string) => Promise<void>
   setTrackLabLabel: (index: number, type: SectionType) => void
   setTrackLabNote: (index: number, text: string) => void
   /** re-run the analysis at a corrected tempo (the x2 / ÷2 half/double-time fix) */
@@ -798,6 +801,27 @@ export const useStore = create<AppState>()((set, get) => ({
           status: 'error',
           fileName: file.name,
           error: err instanceof Error ? err.message : 'Could not decode this file as audio.',
+        },
+      })
+    }
+  },
+
+  loadTrackLabFromUrl: async (url, name) => {
+    // show the analyzing card during the network fetch too — a starter song is 10-20MB, so the
+    // wait is real; the decode/analyze pass afterwards reuses loadTrackLabFile unchanged
+    set({ trackLab: { ...emptyTrackLab(), status: 'analyzing', fileName: name } })
+    try {
+      const resp = await fetch(url)
+      if (!resp.ok) throw new Error(`download failed (${resp.status})`)
+      const blob = await resp.blob()
+      await get().loadTrackLabFile(new File([blob], name, { type: blob.type || 'audio/mpeg' }))
+    } catch (err) {
+      set({
+        trackLab: {
+          ...emptyTrackLab(),
+          status: 'error',
+          fileName: name,
+          error: err instanceof Error ? `${err.message} — starter songs stream from the web, so check your connection.` : 'Download failed.',
         },
       })
     }

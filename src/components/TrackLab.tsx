@@ -9,6 +9,32 @@ import { SECTION_COLORS } from './ArrangementView'
 // label the structure, table the elements, and steal the skeleton/break into BeatLab itself.
 // All analysis is local (audio/analysis.ts); nothing is uploaded anywhere.
 
+// Starter songs: streamed on demand (never bundled) so Track Lab works without the student
+// hunting for a file. Two modern CC-licensed netlabel tracks from the Internet Archive — real
+// four-on-floor structure, which is what the section detector was built for — plus the first
+// commercial jazz record ever made (1917, public domain) for the history angle. Attribution
+// lives in the loaded name and the button tooltip; CORS verified on both hosts.
+const STARTER_SONGS: { label: string; name: string; url: string; credit: string }[] = [
+  {
+    label: 'Deep Techno',
+    name: 'AFM – Sometimes (Monofonicos netlabel, CC BY-SA 4.0)',
+    url: 'https://archive.org/download/MNF033_AFM--Sometimes_EP/02_AFM_-_Sometimes.mp3',
+    credit: 'AFM — "Sometimes" (Monofonicos, Bogotá) · CC BY-SA 4.0 · streamed from the Internet Archive · 7:04 of deep four-on-the-floor with clear builds and breakdowns',
+  },
+  {
+    label: 'Minimal Techno',
+    name: 'Mr.Dee – Storm (Shoki Recordings, CC BY 3.0)',
+    url: 'https://archive.org/download/shoki005g/shoki005g-03_-_Mr.Dee_-_Storm.mp3',
+    credit: 'Mr.Dee — "Storm" (Shoki Recordings) · CC BY 3.0 · streamed from the Internet Archive · 5:51 of minimal techno, textbook section boundaries',
+  },
+  {
+    label: '1917 Jazz',
+    name: 'Livery Stable Blues – Original Dixieland Jass Band, 1917 (public domain)',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/transcoded/1/19/Original_Dixieland_Jass_Band_-_Livery_Stable_Blues_%281917%29_with_hiss_reduction.ogg/Original_Dixieland_Jass_Band_-_Livery_Stable_Blues_%281917%29_with_hiss_reduction.ogg.mp3',
+    credit: 'The first commercial jazz record ever made (Feb 26, 1917) · public domain · streamed from Wikimedia Commons · 12-bar blues form a century before the drop',
+  },
+]
+
 const BAND_ROWS = [
   { key: 'rms', label: 'ENERGY', color: '#ffb02e' },
   { key: 'low', label: 'LOW', color: '#e06c75' },
@@ -25,6 +51,7 @@ function fmtTime(sec: number) {
 export function TrackLab() {
   const trackLab = useStore((s) => s.trackLab)
   const loadTrackLabFile = useStore((s) => s.loadTrackLabFile)
+  const loadTrackLabFromUrl = useStore((s) => s.loadTrackLabFromUrl)
   const setTrackLabLabel = useStore((s) => s.setTrackLabLabel)
   const setTrackLabNote = useStore((s) => s.setTrackLabNote)
   const setTrackLabBpmFactor = useStore((s) => s.setTrackLabBpmFactor)
@@ -138,6 +165,19 @@ export function TrackLab() {
                 <div className="tl-error">Couldn't analyze “{trackLab.fileName}”: {trackLab.error}</div>
               )}
               <div className="tl-drop-hint">click to browse, or drag a file here</div>
+              <div className="tl-starters" onClick={(e) => e.stopPropagation()}>
+                <span className="tl-starters-label">no file handy? deconstruct:</span>
+                {STARTER_SONGS.map((s) => (
+                  <button
+                    key={s.label}
+                    className="tl-btn"
+                    title={s.credit}
+                    onClick={() => void loadTrackLabFromUrl(s.url, s.name)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
             </>
           )}
           <input
