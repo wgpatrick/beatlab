@@ -1822,3 +1822,18 @@ button.seq-label:hover {
 .app-mobile .editor-toolbar > * {
   flex-shrink: 0; /* nowrap + overflow-x scroll: children scroll, never collapse */
 }
+
+/* Touch targets for the per-pad tune steppers: 16px is fine for a mouse, fiddly for a finger —
+   Apple/Google both recommend ~44px minimum; 28px is the best we can fit five-across. */
+.app-mobile .tune-step {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+}
+.app-mobile .tune-value {
+  min-width: 26px;
+  font-size: 11px;
+}
+.app-mobile .sample-slice-label {
+  padding: 7px 0;
+}
