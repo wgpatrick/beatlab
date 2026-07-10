@@ -3,6 +3,7 @@ import { DRUM_LANES, type AutomatableParam, type AutomationPoint, type DrumLane,
 import { useStore } from '../state/store'
 import { wtPartials } from './wavetables'
 import { waveformPeaks } from './analysis'
+import { audioBufferToWav } from './wavEncode'
 
 // Tempo-synced LFO rate: each division's length in quarter-note beats (t = triplet, 2/3 the
 // normal length so it fits 3-in-the-space-of-2, i.e. faster; d = dotted, 1.5x the normal length,
@@ -224,6 +225,58 @@ class Engine {
   getFftData(): Float32Array | null {
     this.getMaster()
     return this.fftAnalyser!.getValue() as Float32Array
+  }
+
+  // Passive tap for WAV export, alongside the analysers above — created lazily the first time
+  // recordWav() runs, reused after that.
+  private recordingDest: MediaStreamAudioDestinationNode | null = null
+
+  /** Records `loopSeconds * passes` of the current mix (post-limiter — exactly what the user
+   * hears) and returns it as a WAV blob. Callers must already have playback running (or the
+   * capture will just be silence) — see the store's `exportSandboxWav` action for the
+   * ensure-playing / restore-prior-state orchestration.
+   *
+   * This is REAL-TIME capture via MediaRecorder, not instant offline rendering: `masterBus`
+   * chains straight to `Tone.getDestination()` at construction (see getMaster() above), so the
+   * graph is built once against the live AudioContext rather than a fresh OfflineAudioContext
+   * per render — `Tone.Offline()`/`OfflineAudioContext` don't drop in without restructuring how
+   * the engine builds its graph. Real-time capture is the pragmatic path today; it takes exactly
+   * as long as the audio itself, not "faster than real time."
+   *
+   * MediaRecorder can only *record* to a lossy codec (webm/opus), so this decodes that capture
+   * back to raw samples and re-encodes as WAV — the universal, lossless format anything outside
+   * the browser (including a future CLI render pipeline) can load without needing a webm/opus
+   * decoder of its own. */
+  async recordWav(loopSeconds: number, passes = 1): Promise<Blob> {
+    this.getMaster()
+    if (!this.recordingDest) {
+      // rawContext is typed AudioContext | OfflineAudioContext, but this engine only ever runs
+      // against a live AudioContext (see getMaster()'s Tone.getDestination() chain) — the cast
+      // just tells TS what's already true at runtime.
+      const ctx = Tone.getContext().rawContext as AudioContext
+      this.recordingDest = ctx.createMediaStreamDestination()
+      this.masterLimiter!.connect(this.recordingDest)
+    }
+    const dest = this.recordingDest
+    const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'].find((t) => MediaRecorder.isTypeSupported(t))
+    const recorder = new MediaRecorder(dest.stream, mimeType ? { mimeType } : undefined)
+    const chunks: Blob[] = []
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data)
+    }
+    const stopped = new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve()
+    })
+    recorder.start()
+    // small tail padding so the limiter/reverb/delay tails aren't cut off mid-decay at the loop boundary
+    await new Promise((r) => setTimeout(r, Math.ceil(loopSeconds * passes * 1000) + 150))
+    recorder.stop()
+    await stopped
+    const captured = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+
+    const arrayBuf = await captured.arrayBuffer()
+    const decoded = await Tone.getContext().rawContext.decodeAudioData(arrayBuf)
+    return audioBufferToWav(decoded)
   }
 
   // Pre-existing race, found via Phase J's capstone lesson testing: toggleDrum/addNote fire their

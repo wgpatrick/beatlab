@@ -9,6 +9,13 @@ import type { ScoreMap } from '../lessons/framework'
 import { GROOVE_STEPS, bassGrooveNotes, chordProgressionNotes, drumTrack, melodyNotes, synthTrack } from '../lessons/framework'
 import { analyzeAudioBuffer, sectionAvg } from '../audio/analysis'
 import { emptyTrackLab, type TrackLabState } from './trackLabState'
+import {
+  loadSandboxFromStorage,
+  nextCountersAfterRestore,
+  saveSandboxToStorage,
+  serializeSandbox,
+  type SandboxPayload,
+} from './sandboxPersistence'
 
 let clipCounter = 0
 let sceneCounter = 0
@@ -51,6 +58,15 @@ const emptyArrangement = (): ArrangementState => ({
 })
 
 let noteCounter = 100000
+
+// Restoring a payload from a previous session must not let a freshly-reset counter hand out an
+// ID that already exists in the restored data — see nextCountersAfterRestore's doc comment.
+function applyRestoredCounters(payload: SandboxPayload) {
+  const next = nextCountersAfterRestore(payload.tracks, payload.scenes)
+  noteCounter = Math.max(noteCounter, next.noteCounter)
+  clipCounter = Math.max(clipCounter, next.clipCounter)
+  sceneCounter = Math.max(sceneCounter, next.sceneCounter)
+}
 
 export interface AppState {
   tracks: Track[]
@@ -126,6 +142,17 @@ export interface AppState {
   stop: () => void
   loadLesson: (id: string) => void
   goToSandbox: () => void
+  /** Load a serialized sandbox payload (from localStorage or an imported `.beatlab.json` file)
+   * as the live sandbox, switching to Sandbox mode. Bumps the note/clip/scene ID counters past
+   * anything in the payload first, so newly-created content can't collide with restored IDs. */
+  restoreSandboxPayload: (payload: SandboxPayload) => void
+  /** The current sandbox, serialized — the same shape saved to localStorage and downloadable as
+   * a `.beatlab.json` file. Returns null outside Sandbox mode (nothing sandbox-shaped to save). */
+  exportSandboxPayload: () => SandboxPayload | null
+  /** Renders one loop pass of the current sandbox to a WAV blob (starting playback if it isn't
+   * already running, and restoring the prior play/stop state afterward). Null outside Sandbox
+   * mode. Takes roughly as long as the loop itself — see engine.ts's recordWav for why. */
+  exportSandboxWav: () => Promise<Blob | null>
   check: () => void
   nextLesson: () => void
   setSection: (index: number, type: SectionType) => void
@@ -376,29 +403,95 @@ export const useStore = create<AppState>()((set, get) => ({
     if (state.isPlaying) state.stop()
     engine.stopTrackLab()
     if (state.trackLab.playingSection !== null) set({ trackLab: { ...state.trackLab, playingSection: null } })
-    const snap = state.sandboxSnapshot ?? {
-      tracks: sandboxTracks(),
+
+    // Three sources, in priority order: (1) the in-memory snapshot from switching away from
+    // Sandbox earlier THIS session — always freshest; (2) a payload restored from localStorage
+    // — the previous session's sandbox, if this is a fresh page load; (3) the default starter
+    // groove, if neither exists (first-ever visit, or storage was cleared).
+    if (state.sandboxSnapshot) {
+      const snap = state.sandboxSnapshot
+      set({
+        mode: 'sandbox',
+        tracks: snap.tracks,
+        bpm: snap.bpm,
+        loopBars: snap.loopBars,
+        selectedTrackId: snap.selectedTrackId,
+        arrangement: emptyArrangement(),
+        feedback: null,
+        paramScores: null,
+        currentStep: -1,
+        noteLength: 2,
+        scenes: snap.scenes,
+        past: [],
+        future: [],
+      })
+      engine.sync(snap.tracks)
+      return
+    }
+
+    const stored = loadSandboxFromStorage()
+    if (stored) {
+      get().restoreSandboxPayload(stored)
+      return
+    }
+
+    const tracks = sandboxTracks()
+    set({
+      mode: 'sandbox',
+      tracks,
       bpm: 124,
       loopBars: 4,
       selectedTrackId: 'drums',
-      scenes: [],
-    }
-    set({
-      mode: 'sandbox',
-      tracks: snap.tracks,
-      bpm: snap.bpm,
-      loopBars: snap.loopBars,
-      selectedTrackId: snap.selectedTrackId,
       arrangement: emptyArrangement(),
       feedback: null,
       paramScores: null,
       currentStep: -1,
       noteLength: 2,
-      scenes: snap.scenes,
+      scenes: [],
       past: [],
       future: [],
     })
-    engine.sync(snap.tracks)
+    engine.sync(tracks)
+  },
+
+  restoreSandboxPayload: (payload) => {
+    const state = get()
+    if (state.isPlaying) state.stop()
+    applyRestoredCounters(payload)
+    set({
+      mode: 'sandbox',
+      tracks: payload.tracks,
+      bpm: payload.bpm,
+      loopBars: payload.loopBars,
+      selectedTrackId: payload.selectedTrackId,
+      arrangement: { ...emptyArrangement(), ...payload.arrangement },
+      feedback: null,
+      paramScores: null,
+      currentStep: -1,
+      noteLength: 2,
+      scenes: payload.scenes,
+      swing: payload.swing,
+      sandboxSnapshot: null, // discard any stale in-memory snapshot — the payload just loaded wins
+      past: [],
+      future: [],
+    })
+    engine.sync(payload.tracks)
+  },
+
+  exportSandboxPayload: () => {
+    const state = get()
+    return state.mode === 'sandbox' ? serializeSandbox(state) : null
+  },
+
+  exportSandboxWav: async () => {
+    const state = get()
+    if (state.mode !== 'sandbox') return null
+    const wasPlaying = state.isPlaying
+    if (!wasPlaying) await state.play()
+    const loopSeconds = (state.loopBars * 16 * 60) / state.bpm / 4 // 16 steps/bar, 4 steps/beat
+    const blob = await engine.recordWav(loopSeconds, 1)
+    if (!wasPlaying) get().stop()
+    return blob
   },
 
   check: () => {
@@ -946,6 +1039,27 @@ export const useStore = create<AppState>()((set, get) => ({
     engine.sync(tracks)
   },
 }))
+
+// Autosave the sandbox to localStorage, debounced, whenever its content actually changes. Guards
+// on reference-equality of the relevant slices first so this is a no-op on every other state
+// change (e.g. masterLevel/currentStep tick once per playback step) without doing any real work.
+let sandboxSaveTimer: ReturnType<typeof setTimeout> | null = null
+useStore.subscribe((state, prev) => {
+  if (state.mode !== 'sandbox') return
+  const changed =
+    state.tracks !== prev.tracks ||
+    state.bpm !== prev.bpm ||
+    state.loopBars !== prev.loopBars ||
+    state.selectedTrackId !== prev.selectedTrackId ||
+    state.scenes !== prev.scenes ||
+    state.swing !== prev.swing ||
+    state.arrangement !== prev.arrangement
+  if (!changed) return
+  if (sandboxSaveTimer) clearTimeout(sandboxSaveTimer)
+  sandboxSaveTimer = setTimeout(() => {
+    saveSandboxToStorage(serializeSandbox(state))
+  }, 500)
+})
 
 // expose for debugging / testing in dev
 if (import.meta.env.DEV) {

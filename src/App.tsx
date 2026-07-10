@@ -9,6 +9,7 @@ import { StepSequencer } from './components/StepSequencer'
 import { ArrangementView } from './components/ArrangementView'
 import { DevicePanel } from './components/DevicePanel'
 import { SceneLauncher } from './components/SceneLauncher'
+import { ProjectToolbar } from './components/ProjectToolbar'
 import { AutomationLane } from './components/AutomationLane'
 import { TrackLab } from './components/TrackLab'
 
@@ -159,6 +160,7 @@ export default function App() {
       ) : (
       <main className="main">
         <TrackStrip />
+        {mode === 'sandbox' && <ProjectToolbar />}
         {mode === 'sandbox' && <SceneLauncher />}
         <div className="editor-area">
           {showArrangement && arrangement.mode === 'structure' ? (

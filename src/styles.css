@@ -871,6 +871,18 @@ button.seq-label:hover {
 }
 
 /* ---------- scenes (session-view analog) ---------- */
+.project-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.project-toolbar-error {
+  font-size: 11px;
+  color: var(--red);
+}
+
 .scenes {
   display: flex;
   flex-direction: column;
