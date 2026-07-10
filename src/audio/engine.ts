@@ -1046,6 +1046,14 @@ class Engine {
     chain.fm.triggerRelease(freq)
   }
 
+  /** Timeline arrangement mode (see ArrangementState.timeline): non-null iff enabled with a
+   * non-empty timeline. The song's total length replaces loopBars as the transport loop, and the
+   * tick resolves each track's content from the current section's scene clips. */
+  private timelineOf(s: ReturnType<typeof useStore.getState>): { sceneId: string; bars: number }[] | null {
+    const a = s.arrangement
+    return a.enabled && a.mode === 'timeline' && a.timeline && a.timeline.length > 0 ? a.timeline : null
+  }
+
   async play() {
     await this.ensureStarted()
     const s = useStore.getState()
@@ -1054,7 +1062,9 @@ class Engine {
     t.bpm.value = s.bpm
     t.loop = true
     t.loopStart = 0
-    t.loopEnd = `${s.loopBars}m`
+    const timeline = this.timelineOf(s)
+    const totalBars = timeline ? timeline.reduce((sum, e) => sum + e.bars, 0) : s.loopBars
+    t.loopEnd = `${totalBars}m`
     if (this.repeatId !== null) t.clear(this.repeatId)
     this.repeatId = t.scheduleRepeat((time) => this.tick(time), '16n', 0)
     t.position = 0
@@ -1078,10 +1088,42 @@ class Engine {
   private tick(time: number) {
     const s = useStore.getState()
     const transport = Tone.getTransport()
-    const totalSteps = s.loopBars * 16
+    const timeline = this.timelineOf(s)
+    const songBars = timeline ? timeline.reduce((sum, e) => sum + e.bars, 0) : s.loopBars
+    const totalSteps = songBars * 16
     const ticksPerStep = transport.PPQ / 4
     const step = Math.round(transport.getTicksAtTime(time) / ticksPerStep) % totalSteps
     const bar = Math.floor(step / 16)
+
+    // Timeline mode: resolve (bar -> section -> scene) once per tick; per track below this
+    // yields the clip whose content plays this section. Pure reads — playback never mutates
+    // live tracks (docs in ArrangementState.timeline).
+    let sectionScene: import('../types').Scene | null = null
+    let sectionStartBar = 0
+    if (timeline) {
+      let cursor = 0
+      for (const entry of timeline) {
+        if (bar < cursor + entry.bars) {
+          sectionStartBar = cursor
+          sectionScene = s.scenes.find((sc) => sc.id === entry.sceneId) ?? null
+          break
+        }
+        cursor += entry.bars
+      }
+    }
+    // A track's playable content this tick: its live notes/pattern in loop mode, or its
+    // scene-mapped clip in timeline mode (null = silent this section). contentStep is the step
+    // within that content: absolute in loop mode; section-relative and cycling every loopBars
+    // bars (the clip cycle length) in timeline mode.
+    const contentOf = (tr: (typeof s.tracks)[number]): { notes: typeof tr.notes; pattern: typeof tr.pattern; contentStep: number } | null => {
+      if (!timeline) return { notes: tr.notes, pattern: tr.pattern, contentStep: step }
+      const clipId = sectionScene?.clipIds[tr.id]
+      if (!clipId) return null
+      const clip = tr.clips.find((c) => c.id === clipId)
+      if (!clip) return null
+      const rel = step - sectionStartBar * 16
+      return { notes: clip.notes, pattern: clip.pattern, contentStep: rel % (s.loopBars * 16) }
+    }
 
     const stepSeconds = Tone.Time('16n').toSeconds()
     // swing: push odd-numbered 16ths later, toward the following even step. 50% = straight,
@@ -1101,6 +1143,8 @@ class Engine {
 
     for (const tr of s.tracks) {
       if (tr.muted) continue
+      const content = contentOf(tr)
+      if (!content) continue // timeline mode: scene leaves this track unmapped -> silent section
       if (s.arrangement.enabled && s.arrangement.mode === 'energy') {
         const section = Math.floor(bar / s.arrangement.barsPerSection)
         if (!s.arrangement.active[tr.id]?.[section]) continue
@@ -1124,7 +1168,7 @@ class Engine {
           }
         }
         for (const lane of DRUM_LANES) {
-          const vel = tr.pattern[lane][step % 16]
+          const vel = content.pattern[lane][content.contentStep % 16]
           if (vel) this.triggerDrum(lane, swingTime, vel)
         }
       } else {
@@ -1230,7 +1274,8 @@ class Engine {
           const duckAmt = duckAuto && duckAuto.length ? interpolateAutomation(duckAuto, step / totalSteps, false) : p.duckAmount
           if (duckAmt > 0) {
             const source = s.tracks.find((x) => x.id === p.duckSource)
-            const kickHit = source?.kind === 'drums' ? source.pattern.kick[step % 16] : 0
+            const srcContent = source ? contentOf(source) : null
+            const kickHit = source?.kind === 'drums' && srcContent ? srcContent.pattern.kick[srcContent.contentStep % 16] : 0
             if (kickHit) {
               const dipDb = duckAmt * 24
               chain.vol.volume.cancelScheduledValues(swingTime)
@@ -1247,12 +1292,12 @@ class Engine {
         // stored note. At strength 0 (default) or an already-grid-aligned note, effStart === n.start
         // exactly, so this reduces to the pre-Phase-G `n.start === step` check with zero behavior change.
         const due: { note: (typeof tr.notes)[number]; effStart: number }[] = []
-        for (const noteObj of tr.notes) {
+        for (const noteObj of content.notes) {
           const effStart =
             s.quantizeStrength > 0
               ? noteObj.start + (Math.round(noteObj.start) - noteObj.start) * (s.quantizeStrength / 100)
               : noteObj.start
-          if (Math.floor(effStart) === step) due.push({ note: noteObj, effStart })
+          if (Math.floor(effStart) === content.contentStep) due.push({ note: noteObj, effStart })
         }
 
         // Phase H arpeggiator: notes sharing this exact step (a stacked chord) fan out across the
@@ -1275,8 +1320,8 @@ class Engine {
         for (let i = 0; i < arpSlots; i++) {
           const { note: noteObj, effStart } = arpeggiating ? ordered[i % ordered.length] : ordered[i]
           const noteTime = arpeggiating
-            ? swingTime + (effStart - step) * stepSeconds + i * slotSeconds
-            : swingTime + (effStart - step) * stepSeconds
+            ? swingTime + (effStart - content.contentStep) * stepSeconds + i * slotSeconds
+            : swingTime + (effStart - content.contentStep) * stepSeconds
           const dur = arpeggiating ? Math.max(slotSeconds * 0.85, 0.03) : Math.max(noteObj.duration * stepSeconds * 0.9, 0.05)
           let freq = Tone.Frequency(noteObj.pitch, 'midi').toFrequency()
           if (p.lfoDest === 'pitch' && lfoOn) freq *= Math.pow(2, (p.lfoDepth * lfoValue * 100) / 1200)

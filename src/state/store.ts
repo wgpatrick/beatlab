@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ArrangementState, AutomatableParam, AutomationCurve, DrumLane, DrumPattern, Note, Scene, SectionType, SynthParams, Track } from '../types'
+import type { ArrangementState, AutomatableParam, AutomationCurve, Clip, DrumLane, DrumPattern, Note, Scene, SectionType, SynthParams, Track } from '../types'
 import { DEFAULT_SYNTH } from '../types'
 import { engine, type SampleSlice } from '../audio/engine'
 import { midiInput } from '../audio/midi'
@@ -82,6 +82,9 @@ export interface DawPartialTrack {
   notes: Note[]
   synth: Partial<SynthParams>
   pattern?: Partial<DrumPattern>
+  /** v0.4: when present, the file's clips REPLACE the track's clips (file is the document);
+   * when absent, existing clips are preserved (a pre-v0.4 sync must not destroy them). */
+  clips?: Clip[]
 }
 
 export interface DawPartialState {
@@ -89,6 +92,12 @@ export interface DawPartialState {
   loopBars: number
   selectedTrackId: string
   tracks: DawPartialTrack[]
+  /** v0.4: when present, replaces the scene list (same file-wins rule as clips). */
+  scenes?: Scene[]
+  /** v0.4: non-null = enable the timeline arrangement (the song); null = explicitly no song
+   * (clears a previous timeline back to loop mode); undefined = pre-v0.4 caller, leave
+   * arrangement alone. */
+  song?: { sceneId: string; bars: number }[] | null
 }
 
 export interface AppState {
@@ -520,24 +529,37 @@ export const useStore = create<AppState>()((set, get) => ({
           ? ({ ...emptyPattern(), ...Object.fromEntries(Object.entries(dt.pattern).map(([k, v]) => [k, [...(v as number[])]])) } as DrumPattern)
           : (existing?.pattern ?? emptyPattern())
       if (existing) {
-        // The file only models some fields; everything else (clips, automation, mute, the other
-        // ~65 synth params) is preserved from the live track — hot reload, not restore.
-        return { ...existing, name: dt.name, color: dt.color, notes, pattern, synth: { ...existing.synth, ...dt.synth } }
+        // The file only models some fields; everything else (automation, mute, the other ~65
+        // synth params) is preserved from the live track — hot reload, not restore. Clips are
+        // file-owned SINCE v0.4 when the partial carries them, preserved otherwise.
+        return { ...existing, name: dt.name, color: dt.color, notes, pattern, synth: { ...existing.synth, ...dt.synth }, clips: dt.clips ?? existing.clips }
       }
       // A track that exists only in the file: the file is the root document, so it becomes real
       // here — partial synth merged onto defaults (the "importing side's job" from
       // beatlab-daw's converter contract).
-      return { id: dt.id, name: dt.name, color: dt.color, kind: dt.kind, notes, pattern, synth: { ...DEFAULT_SYNTH, ...dt.synth }, muted: false, clips: [] }
+      return { id: dt.id, name: dt.name, color: dt.color, kind: dt.kind, notes, pattern, synth: { ...DEFAULT_SYNTH, ...dt.synth }, muted: false, clips: dt.clips ?? [] }
     })
     // Tracks absent from the file are dropped (file order wins too) — engine.sync disposes
     // their audio chains. Deliberately NOT touching: isPlaying (keep jamming through a file
-    // edit), undo history (git is the undo story for external edits), scenes/swing/arrangement
-    // (not modeled by the file yet — see beatlab-daw/docs/phase-1-plan.md).
-    applyRestoredCounters(tracks, state.scenes)
+    // edit), undo history (git is the undo story for external edits), swing (not modeled).
+    // Scenes and the timeline arrangement ARE file-owned since v0.4 — when the partial carries
+    // them, the file wins; when it doesn't (pre-v0.4 daemon), they're preserved untouched.
+    const scenes = docState.scenes ?? state.scenes
+    applyRestoredCounters(tracks, scenes)
     const selectedTrackId = tracks.some((t) => t.id === docState.selectedTrackId)
       ? docState.selectedTrackId
       : (tracks[0]?.id ?? state.selectedTrackId)
-    set({ tracks, bpm: docState.bpm, loopBars: docState.loopBars, selectedTrackId })
+    let arrangement = state.arrangement
+    if (docState.song !== undefined) {
+      if (docState.song !== null && docState.song.length > 0) {
+        arrangement = { ...state.arrangement, enabled: true, mode: 'timeline', timeline: docState.song.map((e) => ({ ...e })) }
+      } else if (state.arrangement.mode === 'timeline') {
+        // file explicitly has no song: clear OUR timeline, but never stomp a lesson's
+        // energy/structure arrangement (those aren't file-owned)
+        arrangement = { ...state.arrangement, enabled: false, mode: null, timeline: undefined }
+      }
+    }
+    set({ tracks, scenes, arrangement, bpm: docState.bpm, loopBars: docState.loopBars, selectedTrackId })
     engine.sync(tracks)
   },
 

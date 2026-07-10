@@ -247,11 +247,16 @@ export type SectionType = (typeof SECTION_TYPES)[number]
 
 export interface ArrangementState {
   enabled: boolean
-  mode: 'structure' | 'energy' | null
+  mode: 'structure' | 'energy' | 'timeline' | null
   sections: (SectionType | null)[]
   barsPerSection: number
   // trackId -> one on/off flag per section (energy mode)
   active: Record<string, boolean[]>
+  /** timeline mode: the song as an ordered list of scene sections — play `sceneId`'s clips for
+   * `bars` bars (each clip loops every loopBars bars within its section; tracks a scene leaves
+   * unmapped are silent for that section). Resolved at tick time from clip data — playback never
+   * mutates live tracks. Authored via the .beat file / CLI (agent-native); no GUI editor yet. */
+  timeline?: { sceneId: string; bars: number }[]
 }
 
 export interface TargetPatch {
