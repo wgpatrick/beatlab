@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import type { ArrangementState, AutomatableParam, AutomationCurve, DrumLane, DrumPattern, Note, Scene, SectionType, SynthParams, Track } from '../types'
+import { DEFAULT_SYNTH } from '../types'
 import { engine, type SampleSlice } from '../audio/engine'
 import { midiInput } from '../audio/midi'
 import { handleMidiNoteOff, handleMidiNoteOn, releaseAllHeld } from '../audio/midiRecorder'
 import { setComputerKeyboardEnabled as setComputerKeyboardListening, setComputerKeyboardHandlers } from '../audio/computerKeyboard'
 import { findLesson, LESSONS, nextLessonId, sandboxTracks, type Lesson, type LessonParams } from '../lessons/curriculum'
 import type { ScoreMap } from '../lessons/framework'
-import { GROOVE_STEPS, bassGrooveNotes, chordProgressionNotes, drumTrack, melodyNotes, synthTrack } from '../lessons/framework'
+import { GROOVE_STEPS, bassGrooveNotes, chordProgressionNotes, drumTrack, emptyPattern, melodyNotes, synthTrack } from '../lessons/framework'
 import { analyzeAudioBuffer, sectionAvg } from '../audio/analysis'
 import { emptyTrackLab, type TrackLabState } from './trackLabState'
 import {
@@ -61,11 +62,33 @@ let noteCounter = 100000
 
 // Restoring a payload from a previous session must not let a freshly-reset counter hand out an
 // ID that already exists in the restored data — see nextCountersAfterRestore's doc comment.
-function applyRestoredCounters(payload: SandboxPayload) {
-  const next = nextCountersAfterRestore(payload.tracks, payload.scenes)
+function applyRestoredCounters(tracks: Track[], scenes: Scene[]) {
+  const next = nextCountersAfterRestore(tracks, scenes)
   noteCounter = Math.max(noteCounter, next.noteCounter)
   clipCounter = Math.max(clipCounter, next.clipCounter)
   sceneCounter = Math.max(sceneCounter, next.sceneCounter)
+}
+
+/** The track shape a `.beat` document reduces to — only the fields the format models. Everything
+ * else (the other ~65 SynthParams fields, clips, automation, mute state) is merged from the
+ * existing track when there is one, or from defaults when the track is new. Reconstituting a
+ * full Track from this partial is deliberately THIS side's job, not the .beat core's — see
+ * beatlab-daw/src/core/convert.ts (beatDocumentToPartialTracks) for why. */
+export interface DawPartialTrack {
+  id: string
+  name: string
+  color: string
+  kind: 'synth' | 'drums'
+  notes: Note[]
+  synth: Partial<SynthParams>
+  pattern?: Partial<DrumPattern>
+}
+
+export interface DawPartialState {
+  bpm: number
+  loopBars: number
+  selectedTrackId: string
+  tracks: DawPartialTrack[]
 }
 
 export interface AppState {
@@ -146,6 +169,11 @@ export interface AppState {
    * as the live sandbox, switching to Sandbox mode. Bumps the note/clip/scene ID counters past
    * anything in the payload first, so newly-created content can't collide with restored IDs. */
   restoreSandboxPayload: (payload: SandboxPayload) => void
+  /** Apply a `.beat` document (as partial tracks, from the daw daemon or the render CLI) onto
+   * the live sandbox WITHOUT stopping playback or clearing undo history — hot reload, not
+   * restore. Creates tracks that only exist in the file, drops tracks absent from it, preserves
+   * everything the file doesn't model. Sandbox mode only (no-op otherwise). */
+  applyDawState: (docState: DawPartialState) => void
   /** The current sandbox, serialized — the same shape saved to localStorage and downloadable as
    * a `.beatlab.json` file. Returns null outside Sandbox mode (nothing sandbox-shaped to save). */
   exportSandboxPayload: () => SandboxPayload | null
@@ -457,7 +485,7 @@ export const useStore = create<AppState>()((set, get) => ({
   restoreSandboxPayload: (payload) => {
     const state = get()
     if (state.isPlaying) state.stop()
-    applyRestoredCounters(payload)
+    applyRestoredCounters(payload.tracks, payload.scenes)
     set({
       mode: 'sandbox',
       tracks: payload.tracks,
@@ -476,6 +504,41 @@ export const useStore = create<AppState>()((set, get) => ({
       future: [],
     })
     engine.sync(payload.tracks)
+  },
+
+  applyDawState: (docState) => {
+    const state = get()
+    // Sandbox only: a synced .beat file must never stomp lesson state. The daw bridge switches
+    // to sandbox mode before its first apply; this guards mid-session mode changes.
+    if (state.mode !== 'sandbox') return
+    const byId = new Map(state.tracks.map((t) => [t.id, t]))
+    const tracks: Track[] = docState.tracks.map((dt) => {
+      const existing = byId.get(dt.id)
+      const notes = dt.kind === 'synth' ? dt.notes.map((n) => ({ ...n })) : (existing?.notes ?? [])
+      const pattern =
+        dt.kind === 'drums' && dt.pattern
+          ? ({ ...emptyPattern(), ...Object.fromEntries(Object.entries(dt.pattern).map(([k, v]) => [k, [...(v as number[])]])) } as DrumPattern)
+          : (existing?.pattern ?? emptyPattern())
+      if (existing) {
+        // The file only models some fields; everything else (clips, automation, mute, the other
+        // ~65 synth params) is preserved from the live track — hot reload, not restore.
+        return { ...existing, name: dt.name, color: dt.color, notes, pattern, synth: { ...existing.synth, ...dt.synth } }
+      }
+      // A track that exists only in the file: the file is the root document, so it becomes real
+      // here — partial synth merged onto defaults (the "importing side's job" from
+      // beatlab-daw's converter contract).
+      return { id: dt.id, name: dt.name, color: dt.color, kind: dt.kind, notes, pattern, synth: { ...DEFAULT_SYNTH, ...dt.synth }, muted: false, clips: [] }
+    })
+    // Tracks absent from the file are dropped (file order wins too) — engine.sync disposes
+    // their audio chains. Deliberately NOT touching: isPlaying (keep jamming through a file
+    // edit), undo history (git is the undo story for external edits), scenes/swing/arrangement
+    // (not modeled by the file yet — see beatlab-daw/docs/phase-1-plan.md).
+    applyRestoredCounters(tracks, state.scenes)
+    const selectedTrackId = tracks.some((t) => t.id === docState.selectedTrackId)
+      ? docState.selectedTrackId
+      : (tracks[0]?.id ?? state.selectedTrackId)
+    set({ tracks, bpm: docState.bpm, loopBars: docState.loopBars, selectedTrackId })
+    engine.sync(tracks)
   },
 
   exportSandboxPayload: () => {
