@@ -25,25 +25,28 @@ Three findings drive the phases below:
 
 *The single biggest gap. Everything here is client-side; no backend appears in this roadmap.*
 
-1. **Sandbox persistence.** Serialize the sandbox session (tracks with notes/patterns/synth
-   params/automation, clips, scenes, bpm/swing, arrangement) to localStorage on change
-   (debounced), restore on load. All of it is already plain JSON in the store — the
-   non-serializable parts (engine audio buffers) stay engine-side and are simply absent after
-   reload, same as today. New `serializeSandbox()`/`restoreSandbox()` in `src/state/store.ts`;
-   version the payload (`{ v: 1, ... }`) so future schema changes can migrate or discard.
-2. **WAV export.** Render the current loop offline and download it. Tone.js supports
-   `Tone.Offline()`, but the engine builds its graph against the live context — the pragmatic
-   path (proven by the golden-ears harness) is a `MediaRecorder` tap on the master bus
-   recording N loop passes in real time, then a WAV/webm download. One button in the transport
-   bar, sandbox mode first. `src/audio/engine.ts` (recorder tap on `masterLimiter`),
-   `src/components/TransportBar.tsx`.
-3. **MIDI export.** Notes are already `{pitch, start, duration, velocity}` in 16th-note steps —
-   a Standard MIDI File writer is ~80 lines with no dependency (format 1, one track per BeatLab
-   track, PPQ 480, tempo event from bpm). Lets a BeatLab riff move into any real DAW — the
-   "export to Live" breakthrough, generalized. New `src/audio/midiExport.ts`.
-4. **Project file save/load.** The same serialized payload as item 1, downloadable as a
-   `.beatlab.json` and re-importable via file picker — survives cache clears, shareable with a
-   friend. Small UI in the sandbox toolbar.
+1. ✅ **Sandbox persistence.** *Done 2026-07-10.* `src/state/sandboxPersistence.ts` +
+   `store.ts`'s debounced autosave subscription. Versioned `{v:1,...}` payload; restoring bumps
+   the note/clip/scene ID counters past anything already in the payload to avoid collisions with
+   a fresh session's counters.
+2. ✅ **WAV export.** *Done 2026-07-10.* Confirmed the engine-builds-against-the-live-context
+   prediction exactly — `Tone.Offline()` doesn't drop in. Shipped as predicted: a
+   `MediaRecorder` tap on `masterLimiter` (`engine.ts`'s `recordWav()`), real-time capture, then
+   decoded and re-encoded as true WAV (`src/audio/wavEncode.ts`) rather than left as webm/opus,
+   so the file is universally loadable. "Export WAV" button in the new
+   `src/components/ProjectToolbar.tsx`, sandbox mode.
+3. **MIDI export.** *Not yet done.* Notes are already `{pitch, start, duration, velocity}` in
+   16th-note steps — a Standard MIDI File writer is ~80 lines with no dependency (format 1, one
+   track per BeatLab track, PPQ 480, tempo event from bpm). Lets a BeatLab riff move into any
+   real DAW — the "export to Live" breakthrough, generalized. New `src/audio/midiExport.ts`.
+4. ✅ **Project file save/load.** *Done 2026-07-10.* The same payload as item 1, downloadable/
+   re-importable as a `.beatlab.json` via `ProjectToolbar.tsx`, with a friendly error for an
+   invalid file.
+
+*(Items 1/2/4 were picked up as the first commit of a separate, longer-horizon exploration —
+see `wgpatrick/beatlab-daw`'s `docs/phase-0-plan.md` for why: the sandbox's serializable state
+shape and a real render path were exactly what that effort needed to prove first, so it made
+more sense to ship them here, for real, than to duplicate them in a parallel fork.)*
 
 ## Phase M — The first 60 seconds
 
