@@ -474,6 +474,48 @@ class Engine {
     this.loadDrumSampleFromBuffer(audioBuf, file.name)
   }
 
+  // ---------- Phase 7 (beatlab-daw): per-lane one-shot samples ----------
+  //
+  // Independent of the whole-kit slicer above: a one-shot replaces ONE lane's voice without
+  // touching sibling lanes or sampleFullBuffer. Kept in separate maps so rebuildSlicePlayers /
+  // clearDrumSample can never wipe them; triggerDrum checks one-shots first (one-shot wins over
+  // a slice if both exist for a lane). Loaded via the daw bridge / headless renderer from a
+  // .beat media block (content-addressed files) — the file, not localStorage, is where a sample
+  // kit persists (SandboxPayload deliberately still carries no audio).
+  private oneShotPlayers: Partial<Record<DrumLane, Tone.Player>> = {}
+  private oneShotGains: Partial<Record<DrumLane, Tone.Gain>> = {}
+  private oneShotMeta: Partial<Record<DrumLane, { name: string; gainDb: number; tune: number }>> = {}
+
+  /** Assigns a decoded one-shot to a single lane. gainDb is the lane's static level (separate
+   * from per-hit velocity — see triggerDrum); tune is in semitones (±24, playbackRate). */
+  loadLaneOneShot(lane: DrumLane, buffer: AudioBuffer, name: string, opts: { gainDb?: number; tune?: number } = {}) {
+    this.clearLaneOneShot(lane)
+    const gainDb = opts.gainDb ?? 0
+    const tune = opts.tune ?? 0
+    const gain = new Tone.Gain(1).connect(this.getDrumBus().filter)
+    const player = new Tone.Player(new Tone.ToneAudioBuffer(buffer)).connect(gain)
+    player.playbackRate = Math.pow(2, tune / 12)
+    this.oneShotPlayers[lane] = player
+    this.oneShotGains[lane] = gain
+    this.oneShotMeta[lane] = { name, gainDb, tune }
+  }
+
+  clearLaneOneShot(lane: DrumLane) {
+    this.oneShotPlayers[lane]?.dispose()
+    this.oneShotGains[lane]?.dispose()
+    delete this.oneShotPlayers[lane]
+    delete this.oneShotGains[lane]
+    delete this.oneShotMeta[lane]
+  }
+
+  clearAllLaneOneShots() {
+    for (const lane of Object.keys(this.oneShotPlayers) as DrumLane[]) this.clearLaneOneShot(lane)
+  }
+
+  getLaneOneShots(): Partial<Record<DrumLane, { name: string; gainDb: number; tune: number }>> {
+    return { ...this.oneShotMeta }
+  }
+
   /** Starter samples: stream a public-domain recording straight from its home (Wikimedia Commons
    * serves CORS `*`), decode, and load a [startSec, startSec+durSec) window of it. Nothing is
    * bundled in the repo — the app stays audio-free, the PD source stays credited at its URL. */
@@ -733,6 +775,15 @@ class Engine {
     const lastLane = this.lastLaneTriggerTime[lane]
     if (lastLane !== undefined && t <= lastLane) t = lastLane + 0.005
     this.lastLaneTriggerTime[lane] = t
+    // Per-lane one-shot wins over a whole-kit slice: static lane level (gainDb) multiplied by
+    // per-hit velocity, so velocity never overwrites the lane's mixed level.
+    const oneShot = this.oneShotPlayers[lane]
+    if (oneShot) {
+      const meta = this.oneShotMeta[lane]!
+      this.oneShotGains[lane]!.gain.value = velocity * Math.pow(10, meta.gainDb / 20)
+      oneShot.start(t)
+      return
+    }
     const player = this.samplePlayers[lane]
     if (player) {
       // Approximate per-hit velocity via the slice's own gain node rather than a real per-voice
