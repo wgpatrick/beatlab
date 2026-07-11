@@ -19,6 +19,8 @@
 
 import { useStore, type DawPartialState } from './store'
 import { serializeSandbox } from './sandboxPersistence'
+import { engine } from '../audio/engine'
+import type { DrumLane } from '../types'
 
 // True while an incoming document is being applied, so the store subscription below doesn't
 // POST the daemon's own change straight back at it. Zustand fires subscriptions synchronously
@@ -32,6 +34,49 @@ export function initDawBridge(): void {
 
   console.log(`[daw] bridging to beat daemon at ${base}`)
 
+  // v0.5 lane samples: the bridge fetches media bytes from the daemon (transport), decodes,
+  // and hands buffers to the engine's per-lane loader. Cached by (sampleId, sha256) so a doc
+  // push that didn't change a lane doesn't refetch; a lane whose assignment vanished is cleared.
+  const bufferCache = new Map<string, AudioBuffer>()
+  const laneState = new Map<DrumLane, string>() // lane -> "sampleId|gainDb|tune" applied
+  async function syncLaneSamples(docState: DawPartialState) {
+    const media = new Map((docState.media ?? []).map((m) => [m.id, m]))
+    const wanted = new Map<DrumLane, { sample: string; gainDb: number; tune: number }>()
+    for (const t of docState.tracks) {
+      for (const [lane, ref] of Object.entries(t.laneSamples ?? {})) wanted.set(lane as DrumLane, ref)
+    }
+    for (const lane of [...laneState.keys()]) {
+      if (!wanted.has(lane)) {
+        engine.clearLaneOneShot(lane)
+        laneState.delete(lane)
+      }
+    }
+    for (const [lane, ref] of wanted) {
+      const key = `${ref.sample}|${ref.gainDb}|${ref.tune}`
+      if (laneState.get(lane) === key) continue
+      const entry = media.get(ref.sample)
+      if (!entry) {
+        console.warn(`[daw] lane ${lane}: sample "${ref.sample}" not in media table`)
+        continue
+      }
+      try {
+        const cacheKey = `${entry.id}:${entry.sha256}`
+        let buffer = bufferCache.get(cacheKey)
+        if (!buffer) {
+          const res = await fetch(`${base}/media/${encodeURIComponent(entry.path)}`)
+          if (!res.ok) throw new Error(`GET /media: HTTP ${res.status}`)
+          buffer = await new AudioContext().decodeAudioData(await res.arrayBuffer())
+          bufferCache.set(cacheKey, buffer)
+        }
+        engine.loadLaneOneShot(lane, buffer, entry.id, { gainDb: ref.gainDb, tune: ref.tune })
+        laneState.set(lane, key)
+        console.log(`[daw] lane ${lane} <- sample "${entry.id}" (${ref.gainDb} dB, ${ref.tune} st)`)
+      } catch (err) {
+        console.warn(`[daw] lane ${lane}: could not load sample "${ref.sample}":`, err)
+      }
+    }
+  }
+
   function applyDoc(docState: DawPartialState) {
     applyingFromDaemon = true
     try {
@@ -41,6 +86,7 @@ export function initDawBridge(): void {
     } finally {
       applyingFromDaemon = false
     }
+    void syncLaneSamples(docState)
   }
 
   async function pullDoc() {

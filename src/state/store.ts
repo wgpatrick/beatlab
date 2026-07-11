@@ -85,6 +85,9 @@ export interface DawPartialTrack {
   /** v0.4: when present, the file's clips REPLACE the track's clips (file is the document);
    * when absent, existing clips are preserved (a pre-v0.4 sync must not destroy them). */
   clips?: Clip[]
+  /** v0.5: per-lane one-shot sample assignments. State-wise these are transparent (the engine
+   * holds the audio); the daw bridge fetches the media and drives engine.loadLaneOneShot. */
+  laneSamples?: Record<string, { sample: string; gainDb: number; tune: number }>
 }
 
 export interface DawPartialState {
@@ -98,6 +101,8 @@ export interface DawPartialState {
    * (clears a previous timeline back to loop mode); undefined = pre-v0.4 caller, leave
    * arrangement alone. */
   song?: { sceneId: string; bars: number }[] | null
+  /** v0.5: the document's content-addressed media table (audio fetched by the bridge). */
+  media?: { id: string; sha256: string; path: string }[]
 }
 
 export interface AppState {
