@@ -128,11 +128,45 @@ export function initDawBridge(): void {
     if (sendTimer) clearTimeout(sendTimer)
     sendTimer = setTimeout(() => {
       const payload = serializeSandbox(useStore.getState())
+      // Bug fix (Stream D verification): mirror-image of store.ts's stepsToFraction on the way
+      // in — the .beat format's clip automation `time` is in fractional 16th-steps from the
+      // clip's start (Note.start's convention), but this app's live AutomationPoint.time is a
+      // 0..1 loop fraction. Rescale on the way OUT too, so a knob-drawn automation lane the user
+      // just edited round-trips back into the file in the format's own unit instead of writing
+      // 0..1 fractions into a field the format defines as step counts. Payload-local only — never
+      // mutates the live store (localStorage autosave, which also calls serializeSandbox, must
+      // keep the app's native fraction units).
+      const totalSteps = payload.loopBars * 16
+      const outgoing = totalSteps
+        ? {
+            ...payload,
+            tracks: payload.tracks.map((t) =>
+              t.clips.length === 0
+                ? t
+                : {
+                    ...t,
+                    clips: t.clips.map((c) =>
+                      !c.automation
+                        ? c
+                        : {
+                            ...c,
+                            automation: Object.fromEntries(
+                              Object.entries(c.automation).map(([param, points]) => [
+                                param,
+                                points!.map((p) => ({ ...p, time: p.time * totalSteps })),
+                              ]),
+                            ) as typeof c.automation,
+                          },
+                    ),
+                  },
+            ),
+          }
+        : payload
       sendQueue = sendQueue.then(() =>
         fetch(`${base}/state`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(outgoing),
         }).catch((err) => console.warn('[daw] could not sync state to daemon:', err)),
       )
     }, 250)

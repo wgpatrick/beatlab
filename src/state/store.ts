@@ -69,6 +69,32 @@ function applyRestoredCounters(tracks: Track[], scenes: Scene[]) {
   sceneCounter = Math.max(sceneCounter, next.sceneCounter)
 }
 
+/** BUG FIX (Stream D verification, docs/phase-10-clip-automation-verification.md in the dotbeat
+ * repo): the daemon bridge hands clip automation points with `time` in the .beat format's own
+ * unit — fractional 16th-note steps from the clip's start, the SAME convention as Note.start
+ * (see beatlab-daw/docs/format-spec.md) — but this app's own AutomationPoint.time is a 0..1
+ * fraction of the whole loop (confirmed here: AutomationLane.tsx's `timeToX = time * width`,
+ * engine.ts's `interpolateAutomation`'s `frac` argument, and store.ts's own
+ * `recordAutomationPoint(trackId, param, step / totalSteps, ...)` call, all consistently 0..1).
+ * Nothing rescaled between the two, so a clip loaded from a .beat file played back a wrong
+ * automation curve (point time 2 read literally as fraction 2.0 — past the end of the loop —
+ * instead of "step 2 of a 32-step loop"). Convert on the way in here (steps -> fraction); the
+ * mirrored fraction<-steps conversion on the way OUT lives in dawBridge.ts right before the
+ * POST to the daemon. */
+function stepsToFraction(automation: Track['automation'], loopBars: number): Track['automation'] {
+  if (!automation) return automation
+  const totalSteps = loopBars * 16
+  if (!totalSteps) return automation
+  return Object.fromEntries(
+    Object.entries(automation).map(([param, points]) => [param, points!.map((p) => ({ ...p, time: p.time / totalSteps }))]),
+  ) as Track['automation']
+}
+
+function rescaleClipsStepsToFraction(clips: Clip[] | undefined, loopBars: number): Clip[] | undefined {
+  if (!clips) return clips
+  return clips.map((c) => (c.automation ? { ...c, automation: stepsToFraction(c.automation, loopBars) } : c))
+}
+
 /** The track shape a `.beat` document reduces to — only the fields the format models. Everything
  * else (the other ~65 SynthParams fields, clips, automation, mute state) is merged from the
  * existing track when there is one, or from defaults when the track is new. Reconstituting a
@@ -533,16 +559,19 @@ export const useStore = create<AppState>()((set, get) => ({
         dt.kind === 'drums' && dt.pattern
           ? ({ ...emptyPattern(), ...Object.fromEntries(Object.entries(dt.pattern).map(([k, v]) => [k, [...(v as number[])]])) } as DrumPattern)
           : (existing?.pattern ?? emptyPattern())
+      // Bug fix: rescale clip automation time from the .beat format's step units into this app's
+      // 0..1 loop-fraction units — see stepsToFraction's comment above.
+      const clips = rescaleClipsStepsToFraction(dt.clips, docState.loopBars)
       if (existing) {
         // The file only models some fields; everything else (automation, mute, the other ~65
         // synth params) is preserved from the live track — hot reload, not restore. Clips are
         // file-owned SINCE v0.4 when the partial carries them, preserved otherwise.
-        return { ...existing, name: dt.name, color: dt.color, notes, pattern, synth: { ...existing.synth, ...dt.synth }, clips: dt.clips ?? existing.clips }
+        return { ...existing, name: dt.name, color: dt.color, notes, pattern, synth: { ...existing.synth, ...dt.synth }, clips: clips ?? existing.clips }
       }
       // A track that exists only in the file: the file is the root document, so it becomes real
       // here — partial synth merged onto defaults (the "importing side's job" from
       // beatlab-daw's converter contract).
-      return { id: dt.id, name: dt.name, color: dt.color, kind: dt.kind, notes, pattern, synth: { ...DEFAULT_SYNTH, ...dt.synth }, muted: false, clips: dt.clips ?? [] }
+      return { id: dt.id, name: dt.name, color: dt.color, kind: dt.kind, notes, pattern, synth: { ...DEFAULT_SYNTH, ...dt.synth }, muted: false, clips: clips ?? [] }
     })
     // Tracks absent from the file are dropped (file order wins too) — engine.sync disposes
     // their audio chains. Deliberately NOT touching: isPlaying (keep jamming through a file

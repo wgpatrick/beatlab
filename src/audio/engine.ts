@@ -1166,14 +1166,24 @@ class Engine {
     // scene-mapped clip in timeline mode (null = silent this section). contentStep is the step
     // within that content: absolute in loop mode; section-relative and cycling every loopBars
     // bars (the clip cycle length) in timeline mode.
-    const contentOf = (tr: (typeof s.tracks)[number]): { notes: typeof tr.notes; pattern: typeof tr.pattern; contentStep: number } | null => {
-      if (!timeline) return { notes: tr.notes, pattern: tr.pattern, contentStep: step }
+    // BUG FIX (Stream D verification, docs/phase-10-clip-automation-verification.md in the
+    // dotbeat repo): this used to return only notes/pattern, so every automation read further
+    // down this function fell back to the LIVE track's tr.automation regardless of which
+    // section/clip was actually playing — notes and drum hits correctly switched per scene, but
+    // automation never did (confirmed live: a 2-bar song alternating two clips with different
+    // cutoff automation played a flat, unchanging cutoff for the whole song). automation is now
+    // part of the per-tick content: the scene's clip in timeline mode, the live track's own
+    // automation in loop mode (unchanged behavior there).
+    const contentOf = (
+      tr: (typeof s.tracks)[number],
+    ): { notes: typeof tr.notes; pattern: typeof tr.pattern; contentStep: number; automation: typeof tr.automation } | null => {
+      if (!timeline) return { notes: tr.notes, pattern: tr.pattern, contentStep: step, automation: tr.automation }
       const clipId = sectionScene?.clipIds[tr.id]
       if (!clipId) return null
       const clip = tr.clips.find((c) => c.id === clipId)
       if (!clip) return null
       const rel = step - sectionStartBar * 16
-      return { notes: clip.notes, pattern: clip.pattern, contentStep: rel % (s.loopBars * 16) }
+      return { notes: clip.notes, pattern: clip.pattern, contentStep: rel % (s.loopBars * 16), automation: clip.automation }
     }
 
     const stepSeconds = Tone.Time('16n').toSeconds()
@@ -1236,10 +1246,16 @@ class Engine {
         const lfoRateHz = p.lfoSync ? syncedRateHz(s.bpm, p.lfoSyncRate) : p.lfoRate
         const lfoValue = lfoOn ? lfoWaveValue(p, lfoRateHz, time) : 0
 
-        const cutoffAuto = tr.automation?.cutoff
+        // BUG FIX (Stream D verification): read from content.automation (the currently-playing
+        // clip's automation in timeline mode, the live track's in loop mode), not tr.automation
+        // directly — see contentOf's comment above. The interpolation fraction is likewise
+        // content.contentStep over the CLIP's own loop length (s.loopBars*16), not step/totalSteps
+        // (the whole-song step count in timeline mode) — AutomationPoint.time is authored as a
+        // 0..1 fraction of one clip loop, the same length contentStep already cycles over.
+        const cutoffAuto = content.automation?.cutoff
         let baseCutoff = p.cutoff
         if (cutoffAuto && cutoffAuto.length) {
-          baseCutoff = interpolateAutomation(cutoffAuto, step / totalSteps, true)
+          baseCutoff = interpolateAutomation(cutoffAuto, content.contentStep / (s.loopBars * 16), true)
         }
         if (p.lfoDest === 'cutoff' && lfoOn) {
           const hz = baseCutoff * Math.pow(2, p.lfoDepth * lfoValue)
@@ -1265,12 +1281,12 @@ class Engine {
         // block runs last win within the same tick — same documented tradeoff as the duck/amp-LFO
         // case, not worth a full modulation-mixing pass for a step-resolution teaching engine.
         const rampTime = swingTime + stepSeconds
-        if (tr.automation) {
-          for (const key of Object.keys(tr.automation) as AutomatableParam[]) {
+        if (content.automation) {
+          for (const key of Object.keys(content.automation) as AutomatableParam[]) {
             if (key === 'cutoff' || key === 'duckAmount') continue
-            const points = tr.automation[key]
+            const points = content.automation[key]
             if (!points || !points.length) continue
-            const val = interpolateAutomation(points, step / totalSteps, false)
+            const val = interpolateAutomation(points, content.contentStep / (s.loopBars * 16), false)
             switch (key) {
               case 'resonance': chain.filter.Q.linearRampToValueAtTime(val, rampTime); break
               case 'volume': chain.vol.volume.linearRampToValueAtTime(val, rampTime); break
@@ -1321,8 +1337,8 @@ class Engine {
         // engine is. duckAmount can itself be automated (Phase F) — if so, the automated value
         // wins over the static p.duckAmount for this step.
         if (p.duckSource) {
-          const duckAuto = tr.automation?.duckAmount
-          const duckAmt = duckAuto && duckAuto.length ? interpolateAutomation(duckAuto, step / totalSteps, false) : p.duckAmount
+          const duckAuto = content.automation?.duckAmount
+          const duckAmt = duckAuto && duckAuto.length ? interpolateAutomation(duckAuto, content.contentStep / (s.loopBars * 16), false) : p.duckAmount
           if (duckAmt > 0) {
             const source = s.tracks.find((x) => x.id === p.duckSource)
             const srcContent = source ? contentOf(source) : null
