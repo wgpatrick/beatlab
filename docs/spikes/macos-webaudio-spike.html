@@ -1,0 +1,169 @@
+<!doctype html>
+<!--
+  macOS WebKit / WKWebView Web Audio spike (research 13, D1 gate).
+  Safari on macOS uses the SAME WebKit + Web Audio engine as Tauri's WKWebView, so opening this
+  file in Safari tests the exact audio stack the macOS desktop build would depend on — no Tauri
+  install needed. It runs a representative dotbeat-shaped workload:
+    - an AudioWorklet (the API research 13 flagged as historically glitchy in WebKit),
+    - lookahead-scheduled 16th-note events (how the beatlab engine sequences),
+    - a sustained pad (the "~1s latency / stutter" WebKit bug manifests on sustained Web Audio).
+  It prints the latency numbers and asks you to report what you HEAR (the bug is audible).
+  Open in Safari, click Start, listen ~15 s, then read the verdict box + paste it back.
+-->
+<meta charset="utf-8">
+<title>dotbeat — macOS WebKit audio spike</title>
+<style>
+  body { font: 15px/1.6 -apple-system, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #1c1c1e; }
+  h1 { font-size: 20px; } h2 { font-size: 15px; margin-top: 28px; text-transform: uppercase; letter-spacing: .05em; color: #6b6b70; }
+  button { font: inherit; padding: 10px 20px; border-radius: 8px; border: 1px solid #c7c7cc; background: #fff; cursor: pointer; }
+  button.primary { background: #0a84ff; color: #fff; border-color: #0a84ff; }
+  button:disabled { opacity: .4; cursor: default; }
+  #stats { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; background: #f2f2f7; padding: 14px 18px; border-radius: 10px; }
+  #stats b { color: #6b6b70; font-weight: 500; }
+  .verdict { margin-top: 8px; padding: 14px 18px; border-radius: 10px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; white-space: pre-wrap; }
+  .ok { background: #e6f7ea; } .warn { background: #fff3e0; } .bad { background: #ffe5e5; }
+  .row { display: flex; gap: 10px; align-items: center; margin: 14px 0; }
+  label { display: block; margin: 6px 0; }
+</style>
+
+<h1>dotbeat — macOS WebKit / WKWebView audio spike</h1>
+<p>This is the same WebKit engine Tauri would use on macOS. Click <b>Start</b>, listen for ~15 s
+with the volume up, then answer what you heard. It plays a steady click loop + a sustained pad.</p>
+
+<div class="row">
+  <button id="start" class="primary">Start (15 s)</button>
+  <button id="stop" disabled>Stop</button>
+</div>
+
+<h2>Reported latency & capabilities</h2>
+<div id="stats">
+  <b>sampleRate</b><span id="sr">—</span>
+  <b>baseLatency</b><span id="bl">—</span>
+  <b>outputLatency</b><span id="ol">—</span>
+  <b>AudioWorklet</b><span id="aw">—</span>
+  <b>state</b><span id="st">—</span>
+  <b>scheduled clicks</b><span id="cl">—</span>
+  <b>worklet blocks</b><span id="wb">—</span>
+  <b>max scheduling gap</b><span id="gap">—</span>
+</div>
+
+<h2>What did you hear?</h2>
+<div>
+  <label><input type="radio" name="hear" value="clean"> Clean — steady clicks + smooth pad, started promptly, no dropouts</label>
+  <label><input type="radio" name="hear" value="latency"> Delayed start — noticeable lag (~0.5–1 s+) before sound began</label>
+  <label><input type="radio" name="hear" value="glitch"> Glitchy — stutters, clicks/pops, or silent gaps during playback</label>
+  <label><input type="radio" name="hear" value="silent"> Silent — no audio at all</label>
+</div>
+
+<h2>Verdict (paste this back to Claude)</h2>
+<div id="verdict" class="verdict warn">Run the test, pick what you heard, and this fills in.</div>
+
+<script>
+const $ = (id) => document.getElementById(id)
+let ctx, worklet, running = false, clicks = 0, maxGap = 0, startedAt = 0
+const ua = navigator.userAgent
+const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(ua)
+
+// A tiny AudioWorklet processor (the API WebKit historically glitched on). It just counts blocks
+// and passes a soft noise floor so we exercise the worklet render path continuously.
+const WORKLET_SRC = `
+class Probe extends AudioWorkletProcessor {
+  constructor(){ super(); this.n = 0; }
+  process(inputs, outputs){
+    this.n++;
+    if (this.n % 40 === 0) this.port.postMessage(this.n);
+    const out = outputs[0][0];
+    for (let i=0;i<out.length;i++) out[i] = (Math.random()*2-1) * 0.0006; // -64 dBFS hiss, proves the worklet is live
+    return true;
+  }
+}
+registerProcessor('probe', Probe);
+`
+
+async function start() {
+  clicks = 0; maxGap = 0
+  ctx = new (window.AudioContext || window.webkitAudioContext)()
+  $('sr').textContent = ctx.sampleRate + ' Hz'
+  $('bl').textContent = (ctx.baseLatency != null ? (ctx.baseLatency*1000).toFixed(1)+' ms' : 'n/a')
+  $('aw').textContent = (ctx.audioWorklet ? 'present' : 'MISSING')
+  await ctx.resume()
+  startedAt = performance.now()
+
+  // AudioWorklet path
+  let wb = 0
+  if (ctx.audioWorklet) {
+    try {
+      const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'application/javascript' }))
+      await ctx.audioWorklet.addModule(url)
+      worklet = new AudioWorkletNode(ctx, 'probe')
+      worklet.port.onmessage = (e) => { wb = e.data; $('wb').textContent = wb }
+      worklet.connect(ctx.destination)
+    } catch (err) { $('aw').textContent = 'FAILED: ' + err.message }
+  }
+
+  // Sustained pad — two slightly detuned oscillators through a gain (the sustained-Web-Audio path
+  // where the WebKit ~1s-latency/stutter bug shows up).
+  const pad = ctx.createGain(); pad.gain.value = 0.08; pad.connect(ctx.destination)
+  for (const f of [220, 220*1.005, 330]) { const o = ctx.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.connect(pad); o.start() ; padOsc.push(o) }
+
+  // Lookahead-scheduled 16th-note clicks at 120 bpm — beatlab's sequencing shape. We schedule
+  // ahead every 25 ms and record the largest gap between scheduler ticks (a proxy for main-thread
+  // stalls that would audibly stutter).
+  const stepDur = 60/120/4
+  let nextTime = ctx.currentTime + 0.1
+  let lastTick = performance.now()
+  running = true
+  const scheduler = () => {
+    if (!running) return
+    const now = performance.now()
+    const gap = now - lastTick; lastTick = now
+    if (gap > maxGap) { maxGap = gap; $('gap').textContent = maxGap.toFixed(0) + ' ms' }
+    while (nextTime < ctx.currentTime + 0.1) {
+      const o = ctx.createOscillator(), g = ctx.createGain()
+      o.frequency.value = 1600; o.connect(g); g.connect(ctx.destination)
+      g.gain.setValueAtTime(0.0001, nextTime)
+      g.gain.exponentialRampToValueAtTime(0.25, nextTime + 0.001)
+      g.gain.exponentialRampToValueAtTime(0.0001, nextTime + 0.03)
+      o.start(nextTime); o.stop(nextTime + 0.04)
+      nextTime += stepDur; clicks++; $('cl').textContent = clicks
+    }
+    $('ol').textContent = (ctx.outputLatency != null ? (ctx.outputLatency*1000).toFixed(1)+' ms' : 'n/a')
+    $('st').textContent = ctx.state
+    setTimeout(scheduler, 25)
+  }
+  scheduler()
+  $('start').disabled = true; $('stop').disabled = false
+  setTimeout(() => { if (running) stop() }, 15000)
+}
+
+const padOsc = []
+function stop() {
+  running = false
+  padOsc.forEach(o => { try{o.stop()}catch{} }); padOsc.length = 0
+  if (worklet) try { worklet.disconnect() } catch {}
+  $('start').disabled = false; $('stop').disabled = true
+  render()
+}
+
+function render() {
+  const heard = [...document.querySelectorAll('input[name=hear]')].find(r => r.checked)?.value ?? '(not answered)'
+  const cls = heard === 'clean' ? 'ok' : (heard === 'latency' || heard === 'glitch' || heard === 'silent') ? 'bad' : 'warn'
+  const v = $('verdict'); v.className = 'verdict ' + cls
+  v.textContent =
+`macOS WebKit audio spike result
+browser: ${isSafari ? 'Safari (WKWebView engine ✓)' : 'NOT Safari — rerun in Safari for a valid WKWebView result'}
+userAgent: ${ua}
+sampleRate: ${ctx ? ctx.sampleRate : '—'}
+baseLatency: ${ctx && ctx.baseLatency!=null ? (ctx.baseLatency*1000).toFixed(1)+' ms' : 'n/a'}
+outputLatency: ${ctx && ctx.outputLatency!=null ? (ctx.outputLatency*1000).toFixed(1)+' ms' : 'n/a'}
+AudioWorklet: ${ctx && ctx.audioWorklet ? 'present' : 'MISSING'}, blocks rendered: ${$('wb').textContent}
+scheduled clicks: ${clicks}
+max scheduler gap: ${maxGap.toFixed(0)} ms  (big spikes = audible stutter risk)
+HEARD: ${heard}`
+}
+
+$('start').onclick = start
+$('stop').onclick = stop
+document.querySelectorAll('input[name=hear]').forEach(r => r.onchange = render)
+if (!isSafari) { $('verdict').className = 'verdict warn'; $('verdict').textContent = 'Open this file in Safari (not Chrome) — Safari uses the WebKit/WKWebView engine we need to test.' }
+</script>

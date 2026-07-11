@@ -42,6 +42,29 @@ Node-daemon-as-sidecar path is officially supported end-to-end. The one real ris
    sidecars can fail notarization even when the main binary signs cleanly (manual codesign the
    sidecar). Windows/Linux CI builds are routine; Tauri has an official updater.
 
+## Spike result (2026-07-11, run by owner on macOS)
+
+The `docs/spikes/macos-webaudio-spike.html` harness was run in **Safari 18.5** (macOS 10.15.7),
+i.e. the real WKWebView WebKit engine:
+
+| metric | Safari (WKWebView) | Chrome (Blink, control) |
+|---|---|---|
+| baseLatency | **2.9 ms** | 5.8 ms |
+| outputLatency | **28.3 ms** | 40.0 ms |
+| AudioWorklet | present | present |
+| sustained pad + scheduled clicks (15 s) | **heard CLEAN** | clean |
+
+**Verdict: WKWebView passes.** The 2021 WebKit ~1 s-latency/stutter bug (#221334) did **not**
+reproduce on Safari 18.5; latency is actually *lower* than Chrome, and 15 s of sustained +
+scheduled Web Audio played without dropouts. → **the macOS desktop build can be pure Tauri; no
+Electron fallback needed.** This closes D1's single highest risk.
+
+**One follow-up flag** (not a blocker): the worklet's `process()`→main `postMessage` counter
+never ticked in Safari, so custom-AudioWorklet DSP (beatlab uses one for BitCrusher) wasn't
+positively confirmed on WKWebView even though `addModule`/`AudioWorkletNode` constructed without
+error and the native-node audio was clean. Verify custom-worklet effects specifically on
+WKWebView before relying on them; the shell decision doesn't depend on it.
+
 ## What this decides for D1
 
 - **Ship the shell; keep the audio backend swappable** — exactly the D3-roadmap stance. The
