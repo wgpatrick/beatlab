@@ -7,6 +7,7 @@ import { TrackStrip } from './components/TrackStrip'
 import { PianoRoll } from './components/PianoRoll'
 import { StepSequencer } from './components/StepSequencer'
 import { ArrangementView } from './components/ArrangementView'
+import { SongView } from './components/SongView'
 import { DevicePanel } from './components/DevicePanel'
 import { SceneLauncher } from './components/SceneLauncher'
 import { ProjectToolbar } from './components/ProjectToolbar'
@@ -163,7 +164,9 @@ export default function App() {
         {mode === 'sandbox' && <ProjectToolbar />}
         {mode === 'sandbox' && <SceneLauncher />}
         <div className="editor-area">
-          {showArrangement && arrangement.mode === 'structure' ? (
+          {showArrangement && arrangement.mode === 'timeline' ? (
+            <SongView />
+          ) : showArrangement && arrangement.mode === 'structure' ? (
             <ArrangementView />
           ) : showArrangement && arrangement.mode === 'energy' ? (
             <div className="split">
