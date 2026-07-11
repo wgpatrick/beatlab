@@ -848,6 +848,126 @@ button.seq-label:hover {
   font-size: 10px;
 }
 
+/* ---------- song view (D4: full-song timeline, tracks x bars) ---------- */
+.songview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.songview-empty {
+  padding: 24px 16px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.songview-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.songview-body {
+  display: flex;
+  flex-direction: column;
+}
+.songview-ruler-row,
+.songview-row {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.songview-header-spacer {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--panel);
+  flex: none;
+}
+.songview-ruler {
+  background: var(--panel2);
+}
+.songview-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  background: var(--panel);
+  border: none;
+  border-right: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  position: sticky;
+  left: 0;
+  z-index: 3;
+}
+.songview-header:hover {
+  background: var(--panel3);
+}
+.songview-header.selected {
+  background: var(--panel3);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.songview-header-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.songview-grid {
+  position: relative;
+  flex: none;
+  cursor: crosshair;
+  user-select: none;
+}
+.songview-track-grid canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+.songview-section-label {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.songview-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  z-index: 2;
+  pointer-events: none;
+}
+.songview-drag-rect {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 176, 46, 0.18);
+  border: 1px solid var(--accent);
+  pointer-events: none;
+  z-index: 4;
+}
+.songview-selection-rect {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 176, 46, 0.1);
+  border-left: 1px solid var(--accent);
+  border-right: 1px solid var(--accent);
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* ---------- automation ---------- */
 .automation {
   display: flex;
